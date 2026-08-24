@@ -3,6 +3,8 @@ export const themeTokens = {
   colorPrimary: '#18181b', // 自动转为 CSS: --color-primary
   colorBorder: '#e8e8e8', // 自动转为 CSS: --color-border
   colorBgContainer: '#ffffff', // 自动转为 CSS: --color-bg-container
+  colorUnderline: '#18181b',
+  colorBgTextHover: '#f4f4f5', // 自动转化为 CSS: --color-bg-text-hover
 }
 
 export function initTheme() {
