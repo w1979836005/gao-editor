@@ -50,16 +50,4 @@ import { UserOutlined, SettingOutlined } from '@ant-design/icons-vue'
   display: flex;
   gap: 2px;
 }
-.icon {
-  padding: 6px;
-  font-size: 16px;
-  border-radius: 6px; /* 圆角（4px ~ 6px 最契合极简风） */
-  cursor: pointer;
-}
-
-.icon:hover {
-  /* 悬浮时加深图标颜色，并显示浅灰背景 */
-  color: var(--color-primary);
-  background-color: var(--color-bg-text-hover);
-}
 </style>

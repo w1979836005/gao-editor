@@ -4,12 +4,13 @@
       <!-- WebTitle -->
       <WebTitle />
       <!-- SiderTools -->
-
+      <SiderTools />
       <!-- LeftFolders -->
     </div>
     <div class="right-container">
       <div class="header">
         <!-- GlobalHeader -->
+        <GlobalHeader />
       </div>
       <div class="content">
         <RouterView />
@@ -22,6 +23,8 @@
 </template>
 
 <script lang="ts" setup>
+import GlobalHeader from '@/components/GlobalHeader.vue'
+import SiderTools from '@/components/SiderTools.vue'
 import WebTitle from '@/components/WebTitle.vue'
 </script>
 

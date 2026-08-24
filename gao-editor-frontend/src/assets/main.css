@@ -18,3 +18,17 @@
   box-sizing: border-box;
   font-family: var(--font-editor-sans);
 }
+
+.icon {
+  padding: 6px;
+  font-size: 16px;
+  border-radius: 6px; /* 圆角（4px ~ 6px 最契合极简风） */
+  cursor: pointer;
+  color: var(--color-icon);
+}
+
+.icon:hover {
+  /* 悬浮时加深图标颜色，并显示浅灰背景 */
+  color: var(--color-primary);
+  background-color: var(--color-bg-text-hover);
+}
