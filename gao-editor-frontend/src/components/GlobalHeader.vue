@@ -1,5 +1,5 @@
 <template>
-  <div id="homeView">homeVIew</div>
+  <div id="webTitle"></div>
 </template>
 
 <script lang="ts" setup></script>
