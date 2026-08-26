@@ -6,6 +6,7 @@
       <!-- SiderTools -->
       <SiderTools />
       <!-- LeftFolders -->
+      <LeftFolders />
     </div>
     <div class="right-container">
       <div class="header">
@@ -24,6 +25,7 @@
 
 <script lang="ts" setup>
 import GlobalHeader from '@/components/GlobalHeader.vue'
+import LeftFolders from '@/components/LeftFloders/LeftFolders.vue'
 import SiderTools from '@/components/SiderTools.vue'
 import WebTitle from '@/components/WebTitle.vue'
 </script>
