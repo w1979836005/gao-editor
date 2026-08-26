@@ -21,7 +21,7 @@
 
 .icon {
   padding: 6px;
-  font-size: 16px;
+  font-size: 14px;
   border-radius: 6px; /* 圆角（4px ~ 6px 最契合极简风） */
   cursor: pointer;
   color: var(--color-icon);
