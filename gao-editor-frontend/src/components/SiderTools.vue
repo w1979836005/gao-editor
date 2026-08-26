@@ -7,7 +7,11 @@
     <div class="right-tool">
       <FileAddOutlined class="icon" />
       <FolderAddOutlined class="icon" />
-      <ReloadOutlined class="icon" style="font-size: 14px" />
+      <ReloadOutlined 
+          class="icon" 
+          style="font-size: 14px"
+          @click="handleRefresh"
+          />
     </div>
   </div>
 </template>
@@ -20,6 +24,10 @@ import {
   PlusSquareOutlined,
   MinusSquareOutlined,
 } from '@ant-design/icons-vue'
+
+const handleRefresh = ()=>{
+    location.reload()
+}
 </script>
 
 <style scoped>

@@ -11,7 +11,13 @@
       <span v-else class="arrowPlaceholder"></span>
 
       <!-- 图标 -->
-      <component :is="item.icon" class="icon" />
+      <template v-if="item.type === 'folder'">
+        <FolderOutlined class="icon" />
+      </template>
+      
+      <template v-else>
+        <FileOutlined class="icon" />
+      </template>
 
       <!-- 名称 -->
       <span class="floderName">{{ item.name }}</span>
@@ -30,7 +36,7 @@
 </template>
 
 <script lang="ts" setup>
-import { RightOutlined } from '@ant-design/icons-vue'
+import { RightOutlined ,FolderOutlined,FileOutlined } from '@ant-design/icons-vue'
 import type { FileItem } from './LeftFolders.vue'
 
 const props = defineProps<{
