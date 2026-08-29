@@ -2,6 +2,33 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { FileItem } from '@/components/LeftFloders/LeftFolders.vue'
 
+
+/**
+ * 比较函数
+ * @param a 
+ * @param b 
+ * @returns 
+ */
+function compareItems(a: FileItem, b:FileItem) : number {
+  if(a.type !== b.type) {
+    return a.type === 'folder' ? -1 : 1;
+  }
+  return a.name.localeCompare(b.name, undefined, {sensitivity: 'base'}); 
+}
+
+/**
+ * 递归排序文件树
+ * @param list 
+ */
+function sortTree(list: FileItem[]) {
+  list.sort(compareItems);
+  list.forEach(item => {
+    if(item.children && item.children.length) {
+      sortTree(item.children)
+    }
+  })
+}
+
 //初始化数据
  const initFloderList:FileItem[] = [
   {
@@ -184,6 +211,8 @@ import type { FileItem } from '@/components/LeftFloders/LeftFolders.vue'
   { id: 13, name: 'package-lock.json',  type: 'file' },
 ]
 
+//初始化后立马排序一次
+sortTree(initFloderList)
 /**
  * 左侧文件全局状态
  */
@@ -243,6 +272,7 @@ const setAllFoldersClose = ()=> setAllFoldersOpenStatus(floderList.value, false)
  * @returns 
  */
 const setAllFoldersOpen = ()=> setAllFoldersOpenStatus(floderList.value, true);
+
 
   return {  floderList ,activeFloderId, handleToggle, setAllFoldersClose, setAllFoldersOpen}
 },{persist: true})
