@@ -48,12 +48,6 @@ const props = defineProps<{
 const emit = defineEmits(['toggle'])
 
 const handleClick = () => {
-  // if (props.item.type === 'folder') {
-  //   //交给父组件更新
-  //   emit('toggle', props.item.id)
-  // } else {
-  //   console.log('点击了文件')
-  // }
       emit('toggle', props.item.id)
 
 }

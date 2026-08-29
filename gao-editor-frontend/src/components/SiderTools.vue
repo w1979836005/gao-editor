@@ -1,8 +1,8 @@
 <template>
   <div id="siderTools">
     <div class="left-tool">
-      <PlusSquareOutlined class="icon" />
-      <MinusSquareOutlined class="icon" />
+      <PlusSquareOutlined class="icon" @click="LeftFoldersStore.setAllFoldersOpen" />
+      <MinusSquareOutlined class="icon" @click="LeftFoldersStore.setAllFoldersClose"/>
     </div>
     <div class="right-tool">
       <FileAddOutlined class="icon" />
@@ -17,6 +17,7 @@
 </template>
 
 <script lang="ts" setup>
+import { useLeftFoldersStore } from '@/stores/leftFoldersStore'
 import {
   FileAddOutlined,
   FolderAddOutlined,
@@ -24,6 +25,8 @@ import {
   PlusSquareOutlined,
   MinusSquareOutlined,
 } from '@ant-design/icons-vue'
+
+const LeftFoldersStore = useLeftFoldersStore()
 
 const handleRefresh = ()=>{
     location.reload()

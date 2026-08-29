@@ -218,5 +218,31 @@ export const useLeftFoldersStore = defineStore('leftFolders', () => {
 }
 
 
-  return {  floderList ,activeFloderId,handleToggle}
+/**
+ * 递归修改全部的文件isOpen状态
+ * @param FolderList 
+ * @param isOpen 
+ */
+const setAllFoldersOpenStatus = (FolderList: FileItem[], isOpen: boolean) => {
+    FolderList.forEach(item => {
+      item.isOpen = isOpen;
+
+      if(item.children)
+      setAllFoldersOpenStatus(item.children, isOpen);
+    })
+}
+
+/**
+ * 折叠
+ * @returns 
+ */
+const setAllFoldersClose = ()=> setAllFoldersOpenStatus(floderList.value, false);
+
+/**
+ * 展开
+ * @returns 
+ */
+const setAllFoldersOpen = ()=> setAllFoldersOpenStatus(floderList.value, true);
+
+  return {  floderList ,activeFloderId, handleToggle, setAllFoldersClose, setAllFoldersOpen}
 },{persist: true})
