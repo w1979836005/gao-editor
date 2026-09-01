@@ -204,7 +204,7 @@ sortTree(initFloderList)
  */
 export const useLeftFoldersStore = defineStore('leftFolders', () => {
 
- const floderList = ref<FileItem[]>(initFloderList)
+ const floderList = ref<FileItem[]>([])
  const activeFloderId = ref<null | number>(null)
  
  /**
