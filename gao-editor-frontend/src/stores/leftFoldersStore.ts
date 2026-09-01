@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+﻿import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { FileItem } from '@/components/LeftFloders/LeftFolders.vue'
 
@@ -34,7 +34,6 @@ function sortTree(list: FileItem[]) {
   {
     id: 1,
     name: '.vscode',
-    
     type: 'folder',
     isOpen: false,
     children: [
@@ -46,14 +45,12 @@ function sortTree(list: FileItem[]) {
   {
     id: 2,
     name: 'src',
-    
     type: 'folder',
-    isOpen: true, // 默认展开，方便直接往下看深层结构
+    isOpen: true,
     children: [
       {
         id: 201,
         name: 'api',
-        
         type: 'folder',
         isOpen: false,
         children: [
@@ -66,14 +63,12 @@ function sortTree(list: FileItem[]) {
       {
         id: 202,
         name: 'assets',
-        
         type: 'folder',
         isOpen: false,
         children: [
           {
             id: 2021,
             name: 'images',
-            
             type: 'folder',
             isOpen: false,
             children: [
@@ -91,14 +86,12 @@ function sortTree(list: FileItem[]) {
       {
         id: 203,
         name: 'components',
-        
         type: 'folder',
         isOpen: true,
         children: [
           {
             id: 2031,
             name: 'form',
-            
             type: 'folder',
             isOpen: true,
             children: [
@@ -110,7 +103,6 @@ function sortTree(list: FileItem[]) {
           {
             id: 2032,
             name: 'modal',
-            
             type: 'folder',
             isOpen: false,
             children: [
@@ -126,7 +118,6 @@ function sortTree(list: FileItem[]) {
       {
         id: 204,
         name: 'router',
-        
         type: 'folder',
         isOpen: false,
         children: [
@@ -137,7 +128,6 @@ function sortTree(list: FileItem[]) {
       {
         id: 205,
         name: 'store',
-        
         type: 'folder',
         isOpen: false,
         children: [
@@ -151,7 +141,6 @@ function sortTree(list: FileItem[]) {
       {
         id: 206,
         name: 'views',
-        
         type: 'folder',
         isOpen: false,
         children: [
@@ -169,7 +158,6 @@ function sortTree(list: FileItem[]) {
   {
     id: 3,
     name: 'public',
-    
     type: 'folder',
     isOpen: false,
     children: [
@@ -180,7 +168,6 @@ function sortTree(list: FileItem[]) {
   {
     id: 4,
     name: 'tests',
-    
     type: 'folder',
     isOpen: false,
     children: [
@@ -192,11 +179,9 @@ function sortTree(list: FileItem[]) {
       ]},
     ],
   },
-  // 模拟空文件夹和超长文件名，测试文本溢出省略号（ellipsis）
   {
     id: 5,
-    name: 'empty_directory_test_for_nothing_inside_here',
-    
+    name: 'empty_directory_test',
     type: 'folder',
     isOpen: false,
     children: [],
@@ -204,7 +189,7 @@ function sortTree(list: FileItem[]) {
   { id: 6, name: 'package.json',  type: 'file' },
   { id: 7, name: 'tsconfig.json',  type: 'file' },
   { id: 8, name: 'vite.config.ts',  type: 'file' },
-  { id: 9, name: 'README_VERY_LONG_FILE_NAME_DESCRIPTION_EXAMPLE.md',  type: 'file' },
+  { id: 9, name: 'README.md',  type: 'file' },
   { id: 10, name: 'LICENSE',  type: 'file' },
   { id: 11, name: '.gitignore',  type: 'file' },
   { id: 12, name: 'yarn.lock',  type: 'file' },
@@ -213,6 +198,7 @@ function sortTree(list: FileItem[]) {
 
 //初始化后立马排序一次
 sortTree(initFloderList)
+
 /**
  * 左侧文件全局状态
  */
@@ -255,24 +241,109 @@ export const useLeftFoldersStore = defineStore('leftFolders', () => {
 const setAllFoldersOpenStatus = (FolderList: FileItem[], isOpen: boolean) => {
     FolderList.forEach(item => {
       item.isOpen = isOpen;
-
       if(item.children)
       setAllFoldersOpenStatus(item.children, isOpen);
     })
 }
 
-/**
- * 折叠
- * @returns 
- */
 const setAllFoldersClose = ()=> setAllFoldersOpenStatus(floderList.value, false);
-
-/**
- * 展开
- * @returns 
- */
 const setAllFoldersOpen = ()=> setAllFoldersOpenStatus(floderList.value, true);
 
 
-  return {  floderList ,activeFloderId, handleToggle, setAllFoldersClose, setAllFoldersOpen}
+/**
+ * 开始新增文件/文件夹（在正确位置显示输入框）
+ * @param type 文件类型：'file' 或 'folder'
+ */
+const startAddFileItem = (type: 'file' | 'folder') => {
+  const tempItem: FileItem = {
+    id: Date.now(),
+    name: '',
+    type: type,
+    isEditing: true,
+    ...(type === 'folder' ? { isOpen: false, children: [] } : {})
+  }
+  
+  // 找到要添加的位置
+  const addTempItem = (items: FileItem[]): boolean => {
+    // 如果没有选中项，添加到根目录顶部
+    if (activeFloderId.value === null) {
+      items.unshift(tempItem)
+      return true
+    }
+    
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (!item) continue
+      
+      // 找到选中的项
+      if (item.id === activeFloderId.value) {
+        if (item.type === 'folder') {
+          // 选中的是文件夹：添加到该文件夹子目录顶部，并展开
+          if (!item.children) item.children = []
+          item.children.unshift(tempItem)
+          if (!item.isOpen) {
+            items.splice(i, 1, { ...item, isOpen: true })
+          }
+        } else {
+          // 选中的是文件：添加到该文件的同级目录顶部
+          items.unshift(tempItem)
+        }
+        return true
+      }
+      
+      // 递归查找子目录
+      if (item.children && item.children.length > 0) {
+        if (addTempItem(item.children)) return true
+      }
+    }
+    return false
+  }
+  
+  addTempItem(floderList.value)
+}
+
+/**
+ * 完成新增文件/文件夹（用户输入名称后）
+ * @param tempId 临时项的ID
+ * @param fileName 用户输入的文件名
+ */
+const finishAddFileItem = (tempId: number, fileName: string) => {
+  // 递归查找并处理临时项
+  const processTempItem = (items: FileItem[]): boolean => {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (!item) continue
+      
+      if (item.id === tempId) {
+        if (fileName.trim()) {
+          // 用户输入了名称：更新临时项为真正的项
+          const type = item.type
+          items.splice(i, 1, {
+            ...item,
+            name: fileName.trim(),
+            isEditing: false,
+            ...(type === 'folder' ? { isOpen: false, children: [] } : {})
+          })
+          // 排序该目录
+          sortTree(items)
+        } else {
+          // 用户没有输入名称：移除临时项
+          items.splice(i, 1)
+        }
+        return true
+      }
+      
+      // 递归查找子目录
+      if (item.children && processTempItem(item.children)) {
+        return true
+      }
+    }
+    return false
+  }
+  
+  processTempItem(floderList.value)
+}
+
+
+  return { floderList, activeFloderId, handleToggle, setAllFoldersClose, setAllFoldersOpen, startAddFileItem, finishAddFileItem }
 },{persist: true})

@@ -19,8 +19,21 @@
         <FileOutlined class="icon" />
       </template>
 
-      <!-- 名称 -->
-      <span class="floderName">{{ item.name }}</span>
+      <!-- 名称或输入框 -->
+      <template v-if="item.isEditing">
+        <input 
+          class="editInput"
+          v-model="editName"
+          @blur="handleBlur"
+          @keyup.enter="handleEnter"
+          @keyup.escape="handleCancel"
+          ref="editInputRef"
+          placeholder="输入名称"
+        />
+      </template>
+      <template v-else>
+        <span class="floderName">{{ item.name }}</span>
+      </template>
     </div>
 
     <!-- 递归子项 -->
@@ -30,12 +43,14 @@
        :level="level + 1" 
        :active-folder-id="activeFolderId"
        @toggle="emit('toggle',$event)"
+       @finish-edit="(id: number, name: string) => emit('finish-edit', id, name)"
         />
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
+import { ref, nextTick, watch } from 'vue'
 import { RightOutlined ,FolderOutlined,FileOutlined } from '@ant-design/icons-vue'
 import type { FileItem } from './LeftFolders.vue'
 
@@ -45,11 +60,40 @@ const props = defineProps<{
   activeFolderId: null | number
 }>()
 
-const emit = defineEmits(['toggle'])
+const emit = defineEmits(['toggle', 'finish-edit'])
+
+const editName = ref('')
+const editInputRef = ref<HTMLInputElement | null>(null)
+
+// 当进入编辑状态时，聚焦输入框
+watch(() => props.item.isEditing, (newVal) => {
+  if (newVal) {
+    editName.value = ''
+    nextTick(() => {
+      editInputRef.value?.focus()
+    })
+  }
+}, { immediate: true })
 
 const handleClick = () => {
-      emit('toggle', props.item.id)
+  if (!props.item.isEditing) {
+    emit('toggle', props.item.id)
+  }
+}
 
+const handleEnter = () => {
+  // Enter键：确认输入
+  emit('finish-edit', props.item.id as number, editName.value.trim() || '')
+}
+
+const handleBlur = () => {
+  // 失去焦点：确认输入（无论是否有值）
+  emit('finish-edit', props.item.id as number, editName.value.trim() || '')
+}
+
+const handleCancel = () => {
+  // 取消编辑，移除临时项
+  emit('finish-edit', props.item.id as number, '')
 }
 </script>
 
@@ -105,5 +149,18 @@ const handleClick = () => {
   font-size: 12px;
   line-height: 1.2;
   transform: translateY(-1px);
+}
+
+.editInput {
+  flex: 1;
+  height: 20px;
+  font-size: 12px;
+  line-height: 1.2;
+  transform: translateY(-1px);
+  padding: 0 4px;
+  border: 1px solid var(--color-primary);
+  border-radius: 4px;
+  background-color: var(--color-bg-text-hover);
+  outline: none;
 }
 </style>

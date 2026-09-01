@@ -5,7 +5,8 @@
     :key="item.id" :item="item" 
     :level="0" 
     @toggle="folderListStroe.handleToggle" 
-    :active-folder-id="folderListStroe.activeFloderId"/>
+    :active-folder-id="folderListStroe.activeFloderId"
+    @finish-edit="folderListStroe.finishAddFileItem"/>
   </div>
 </template>
 
@@ -19,6 +20,7 @@ export interface FileItem {
   type: 'folder' | 'file'
   children?: FileItem[]
   isOpen?: boolean
+  isEditing?: boolean
 }
 
 

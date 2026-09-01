@@ -1,12 +1,12 @@
-<template>
+﻿<template>
   <div id="siderTools">
     <div class="left-tool">
       <PlusSquareOutlined class="icon" @click="LeftFoldersStore.setAllFoldersOpen" />
       <MinusSquareOutlined class="icon" @click="LeftFoldersStore.setAllFoldersClose"/>
     </div>
     <div class="right-tool">
-      <FileAddOutlined class="icon" />
-      <FolderAddOutlined class="icon" />
+      <FileAddOutlined class="icon" @click="handleAddFile"/>
+      <FolderAddOutlined class="icon" @click="handleAddFolder"/>
       <ReloadOutlined 
           class="icon" 
           style="font-size: 14px"
@@ -30,6 +30,14 @@ const LeftFoldersStore = useLeftFoldersStore()
 
 const handleRefresh = ()=>{
     location.reload()
+}
+
+const handleAddFile = () => {
+  LeftFoldersStore.startAddFileItem('file')
+}
+
+const handleAddFolder = () => {
+  LeftFoldersStore.startAddFileItem('folder')
 }
 </script>
 
