@@ -303,36 +303,69 @@ const startAddFileItem = (type: 'file' | 'folder') => {
 }
 
 /**
+ * 检查同级目录下是否存在同名项
+ * @param items 同级项列表
+ * @param name 要检查的名称
+ * @param type 文件类型
+ * @param excludeId 排除的ID（当前正在编辑的项）
+ * @returns 是否存在同名项
+ */
+const isDuplicateName = (items: FileItem[], name: string, type: 'file' | 'folder', excludeId?: number): boolean => {
+  const normalizedName = name.trim().toLowerCase()
+  return items.some(item =>
+    item.id !== excludeId &&
+    item.type === type &&
+    item.name.trim().toLowerCase() === normalizedName
+  )
+}
+
+/**
  * 完成新增文件/文件夹（用户输入名称后）
  * @param tempId 临时项的ID
  * @param fileName 用户输入的文件名
+ * @returns { success: boolean, message?: string } 是否成功，失败时返回错误信息
  */
-const finishAddFileItem = (tempId: number, fileName: string) => {
+const finishAddFileItem = (tempId: number, fileName: string): { success: boolean; message?: string } => {
+  let result: { success: boolean; message?: string } = { success: false }
+
   // 递归查找并处理临时项
   const processTempItem = (items: FileItem[]): boolean => {
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
       if (!item) continue
-      
+
       if (item.id === tempId) {
         if (fileName.trim()) {
-          // 用户输入了名称：更新临时项为真正的项
-          const type = item.type
-          items.splice(i, 1, {
-            ...item,
-            name: fileName.trim(),
-            isEditing: false,
-            ...(type === 'folder' ? { isOpen: false, children: [] } : {})
-          })
-          // 排序该目录
-          sortTree(items)
+          const itemType = item.type as 'file' | 'folder'
+          // 检查同级目录下是否存在同名项（排除当前正在编辑的临时项）
+          if (isDuplicateName(items, fileName, itemType, tempId)) {
+            // 重名，保留编辑状态让用户修改
+            result = {
+              success: false,
+              message: `已存在同名${itemType === 'folder' ? '文件夹' : '文件'}: ${fileName}`
+            }
+          } else {
+            // 用户输入了名称且不重名：更新临时项为真正的项
+            items.splice(i, 1, {
+              ...item,
+              name: fileName.trim(),
+              isEditing: false,
+              ...(itemType === 'folder' ? { isOpen: false, children: [] } : {})
+            })
+            // 排序该目录
+            sortTree(items)
+            // 设置activeFloderId为新建项
+            activeFloderId.value = tempId
+            result = { success: true }
+          }
         } else {
           // 用户没有输入名称：移除临时项
           items.splice(i, 1)
+          result = { success: true }
         }
         return true
       }
-      
+
       // 递归查找子目录
       if (item.children && processTempItem(item.children)) {
         return true
@@ -340,8 +373,9 @@ const finishAddFileItem = (tempId: number, fileName: string) => {
     }
     return false
   }
-  
+
   processTempItem(floderList.value)
+  return result
 }
 
 

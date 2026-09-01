@@ -21,8 +21,8 @@
 
       <!-- 名称或输入框 -->
       <template v-if="item.isEditing">
-        <input 
-          class="editInput"
+        <input
+          :class="['editInput', { 'editInputError': hasError }]"
           v-model="editName"
           @blur="handleBlur"
           @keyup.enter="handleEnter"
@@ -39,11 +39,11 @@
     <!-- 递归子项 -->
     <div v-if="item.type === 'folder' && item.isOpen && item.children">
       <FolderItem v-for="child in item.children"
-       :key="child.id" :item="child" 
-       :level="level + 1" 
+       :key="child.id" :item="child"
+       :level="level + 1"
        :active-folder-id="activeFolderId"
        @toggle="emit('toggle',$event)"
-       @finish-edit="(id: number, name: string) => emit('finish-edit', id, name)"
+       @finish-edit="(id: number, name: string, callback: (result: { success: boolean; message?: string }) => void) => emit('finish-edit', id, name, callback)"
         />
     </div>
   </div>
@@ -52,6 +52,7 @@
 <script lang="ts" setup>
 import { ref, nextTick, watch } from 'vue'
 import { RightOutlined ,FolderOutlined,FileOutlined } from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
 import type { FileItem } from './LeftFolders.vue'
 
 const props = defineProps<{
@@ -60,15 +61,20 @@ const props = defineProps<{
   activeFolderId: null | number
 }>()
 
-const emit = defineEmits(['toggle', 'finish-edit'])
+const emit = defineEmits<{
+  toggle: [id: string | number]
+  'finish-edit': [id: number, name: string, callback: (result: { success: boolean; message?: string }) => void]
+}>()
 
 const editName = ref('')
 const editInputRef = ref<HTMLInputElement | null>(null)
+const hasError = ref(false)
 
 // 当进入编辑状态时，聚焦输入框
 watch(() => props.item.isEditing, (newVal) => {
   if (newVal) {
     editName.value = ''
+    hasError.value = false
     nextTick(() => {
       editInputRef.value?.focus()
     })
@@ -81,19 +87,36 @@ const handleClick = () => {
   }
 }
 
+const handleFinishEdit = () => {
+  const name = editName.value.trim() || ''
+  emit('finish-edit', props.item.id as number, name, (result) => {
+    if (!result.success && result.message) {
+      // 重名，使用 ant-design-vue 的 message 显示错误
+      hasError.value = true
+      message.error(result.message)
+      nextTick(() => {
+        editInputRef.value?.focus()
+        editInputRef.value?.select()
+      })
+    } else {
+      hasError.value = false
+    }
+  })
+}
+
 const handleEnter = () => {
   // Enter键：确认输入
-  emit('finish-edit', props.item.id as number, editName.value.trim() || '')
+  handleFinishEdit()
 }
 
 const handleBlur = () => {
   // 失去焦点：确认输入（无论是否有值）
-  emit('finish-edit', props.item.id as number, editName.value.trim() || '')
+  handleFinishEdit()
 }
 
 const handleCancel = () => {
   // 取消编辑，移除临时项
-  emit('finish-edit', props.item.id as number, '')
+  emit('finish-edit', props.item.id as number, '', () => {})
 }
 </script>
 
@@ -162,5 +185,9 @@ const handleCancel = () => {
   border-radius: 4px;
   background-color: var(--color-bg-text-hover);
   outline: none;
+}
+
+.editInputError {
+  border-color: var(--color-error, #ff4d4f);
 }
 </style>

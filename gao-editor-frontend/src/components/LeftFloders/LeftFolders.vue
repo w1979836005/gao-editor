@@ -6,7 +6,7 @@
     :level="0" 
     @toggle="folderListStroe.handleToggle" 
     :active-folder-id="folderListStroe.activeFloderId"
-    @finish-edit="folderListStroe.finishAddFileItem"/>
+    @finish-edit="handleFinishEdit"/>
   </div>
 </template>
 
@@ -26,6 +26,10 @@ export interface FileItem {
 
 const folderListStroe = useLeftFoldersStore()
 
+const handleFinishEdit = (id: number, name: string, callback: (result: { success: boolean; message?: string }) => void) => {
+  const result = folderListStroe.finishAddFileItem(id, name)
+  callback(result)
+}
 
 </script>
 
