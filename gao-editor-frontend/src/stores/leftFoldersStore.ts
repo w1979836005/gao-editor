@@ -206,7 +206,15 @@ export const useLeftFoldersStore = defineStore('leftFolders', () => {
 
  const floderList = ref<FileItem[]>([])
  const activeFloderId = ref<null | number>(null)
- 
+ const isCollspe = ref(true)
+
+
+ /**
+  * 切换状态栏
+  */
+ const toggleIsCollspe = () => {
+  isCollspe.value = !isCollspe.value
+ }
  /**
   * 更新activeFolderId以及文件折叠状态
   * @param id 
@@ -378,6 +386,159 @@ const finishAddFileItem = (tempId: number, fileName: string): { success: boolean
   return result
 }
 
+/**
+ * 检查目标文件夹是否是源项的子目录（防止循环引用）
+ * @param sourceId 源项ID
+ * @param targetId 目标文件夹ID
+ * @returns 是否是子目录
+ */
+const isDescendant = (sourceId: number, targetId: number): boolean => {
+  const findDescendant = (items: FileItem[]): boolean => {
+    for (const item of items) {
+      if (item.id === targetId) {
+        return true
+      }
+      if (item.children && findDescendant(item.children)) {
+        return true
+      }
+    }
+    return false
+  }
 
-  return { floderList, activeFloderId, handleToggle, setAllFoldersClose, setAllFoldersOpen, startAddFileItem, finishAddFileItem }
+  // 找到源项，检查目标是否在其子目录中
+  const findSource = (items: FileItem[]): FileItem | null => {
+    for (const item of items) {
+      if (item.id === sourceId) {
+        return item
+      }
+      if (item.children) {
+        const found = findSource(item.children)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  const sourceItem = findSource(floderList.value)
+  if (!sourceItem || !sourceItem.children) return false
+  return findDescendant(sourceItem.children)
+}
+
+/**
+ * 移动文件/文件夹到目标文件夹
+ * @param sourceId 要移动的项的ID
+ * @param targetFolderId 目标文件夹的ID
+ * @returns { success: boolean, message?: string } 是否成功
+ */
+const moveItem = (sourceId: number, targetFolderId: number): { success: boolean; message?: string } => {
+  // 不能移动到自己
+  if (sourceId === targetFolderId) {
+    return { success: false, message: '不能移动到自身' }
+  }
+
+  // 检查目标是否是源的子目录（防止循环引用）
+  if (isDescendant(sourceId, targetFolderId)) {
+    return { success: false, message: '不能移动到自己的子目录中' }
+  }
+
+  let sourceItem: FileItem | null = null
+  let sourceIndex = -1
+  let sourceParent: FileItem[] | null = null
+
+  // 递归查找并移除源项
+  const removeSource = (items: FileItem[]): boolean => {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (!item) continue
+
+      if (item.id === sourceId) {
+        sourceItem = { ...item }
+        sourceIndex = i
+        sourceParent = items
+        items.splice(i, 1)
+        return true
+      }
+
+      if (item.children && removeSource(item.children)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  // 查找目标文件夹并添加源项
+  const addToTarget = (items: FileItem[]): boolean => {
+    for (const item of items) {
+      if (!item) continue
+
+      if (item.id === targetFolderId) {
+        if (item.type !== 'folder') {
+          // 目标不是文件夹，放回原位
+          if (sourceParent && sourceItem) {
+            sourceParent.splice(sourceIndex, 0, sourceItem)
+          }
+          return false
+        }
+
+        if (!item.children) item.children = []
+        item.children.unshift(sourceItem!)
+        // 展开目标文件夹
+        item.isOpen = true
+        return true
+      }
+
+      if (item.children && addToTarget(item.children)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  // 执行移动
+  removeSource(floderList.value)
+
+  if (!sourceItem) {
+    return { success: false, message: '找不到要移动的项' }
+  }
+
+  const added = addToTarget(floderList.value)
+
+  if (!added) {
+    return { success: false, message: '目标不是文件夹' }
+  }
+
+  // 排序目标目录
+  const sortTarget = (items: FileItem[]): boolean => {
+    for (const item of items) {
+      if (item.id === targetFolderId) {
+        if (item.children) sortTree(item.children)
+        return true
+      }
+      if (item.children && sortTarget(item.children)) {
+        return true
+      }
+    }
+    return false
+  }
+  sortTarget(floderList.value)
+
+  // 更新activeFloderId
+  activeFloderId.value = sourceId
+
+  return { success: true }
+}
+
+
+  return {
+    isCollspe,
+    floderList,
+    activeFloderId,
+    handleToggle,
+    setAllFoldersClose,
+    setAllFoldersOpen,
+    startAddFileItem,
+    finishAddFileItem,
+    moveItem,
+    toggleIsCollspe
+  }
 },{persist: true})

@@ -1,6 +1,6 @@
 <template>
   <div id="basicLayout">
-    <div class="left-container">
+    <div class="left-container" v-if="leftFolderStroe.isCollspe">
       <!-- WebTitle -->
       <WebTitle />
       <!-- SiderTools -->
@@ -28,6 +28,10 @@ import GlobalHeader from '@/components/GlobalHeader.vue'
 import LeftFolders from '@/components/LeftFloders/LeftFolders.vue'
 import SiderTools from '@/components/SiderTools.vue'
 import WebTitle from '@/components/WebTitle.vue'
+import { useLeftFoldersStore } from '@/stores/leftFoldersStore'
+
+
+const leftFolderStroe = useLeftFoldersStore()
 </script>
 
 <style scoped>

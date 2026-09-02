@@ -1,9 +1,22 @@
 ﻿<template>
   <div id="folderItem">
     <!-- 当前行-->
-    <div 
-    :class="['folderNode',{ 'active': activeFolderId === item.id }]" 
-    :style="{ paddingLeft: `${level * 16 + 12}px` }" @click="handleClick">
+    <div
+    :class="[
+      'folderNode',
+      { 'active': activeFolderId === item.id },
+      { 'drag-over': isDragOver },
+      { 'dragging': isDragging }
+    ]"
+    :style="{ paddingLeft: `${level * 16 + 12}px` }"
+    :draggable="!item.isEditing"
+    @click="handleClick"
+    @dragstart="handleDragStart"
+    @dragend="handleDragEnd"
+    @dragover="handleDragOver"
+    @dragenter="handleDragEnter"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop">
       <!-- 是否有箭头-->
       <span v-if="item.type === 'folder'" class="arrowContainer">
         <RightOutlined :class="['arrowIcon', 'icon', { isOpen: item.isOpen }]" />
@@ -14,7 +27,7 @@
       <template v-if="item.type === 'folder'">
         <FolderOutlined class="icon" />
       </template>
-      
+
       <template v-else>
         <FileOutlined class="icon" />
       </template>
@@ -44,6 +57,7 @@
        :active-folder-id="activeFolderId"
        @toggle="emit('toggle',$event)"
        @finish-edit="(id: number, name: string, callback: (result: { success: boolean; message?: string }) => void) => emit('finish-edit', id, name, callback)"
+       @move-item="(sourceId: number, targetId: number) => emit('move-item', sourceId, targetId)"
         />
     </div>
   </div>
@@ -64,11 +78,15 @@ const props = defineProps<{
 const emit = defineEmits<{
   toggle: [id: string | number]
   'finish-edit': [id: number, name: string, callback: (result: { success: boolean; message?: string }) => void]
+  'move-item': [sourceId: number, targetId: number]
 }>()
 
 const editName = ref('')
 const editInputRef = ref<HTMLInputElement | null>(null)
 const hasError = ref(false)
+const isDragOver = ref(false)
+const isDragging = ref(false)
+let dragOverTimer: ReturnType<typeof setTimeout> | null = null
 
 // 当进入编辑状态时，聚焦输入框
 watch(() => props.item.isEditing, (newVal) => {
@@ -117,6 +135,97 @@ const handleBlur = () => {
 const handleCancel = () => {
   // 取消编辑，移除临时项
   emit('finish-edit', props.item.id as number, '', () => {})
+}
+
+// ============ 拖拽处理 ============
+
+const handleDragStart = (e: DragEvent) => {
+  if (props.item.isEditing) {
+    e.preventDefault()
+    return
+  }
+
+  isDragging.value = true
+
+  // 设置拖拽数据
+  e.dataTransfer!.effectAllowed = 'move'
+  e.dataTransfer!.setData('text/plain', String(props.item.id))
+
+  // 设置拖拽预览图（可选）
+  const target = e.target as HTMLElement
+  if (target) {
+    target.style.opacity = '0.5'
+  }
+}
+
+const handleDragEnd = (e: DragEvent) => {
+  isDragging.value = false
+
+  // 恢复透明度
+  const target = e.target as HTMLElement
+  if (target) {
+    target.style.opacity = '1'
+  }
+}
+
+const handleDragOver = (e: DragEvent) => {
+  // 只有文件夹才能接收
+  if (props.item.type !== 'folder') {
+    return
+  }
+
+  e.preventDefault()
+  e.dataTransfer!.dropEffect = 'move'
+}
+
+const handleDragEnter = (e: DragEvent) => {
+  // 只有文件夹才能接收
+  if (props.item.type !== 'folder') {
+    return
+  }
+
+  e.preventDefault()
+
+  // 清除之前的定时器
+  if (dragOverTimer) {
+    clearTimeout(dragOverTimer)
+    dragOverTimer = null
+  }
+
+  isDragOver.value = true
+}
+
+const handleDragLeave = (e: DragEvent) => {
+  console.log(e)
+  // 只有文件夹才能接收
+  if (props.item.type !== 'folder') {
+    return
+  }
+
+  // 使用延时处理，避免子元素触发时闪烁
+  dragOverTimer = setTimeout(() => {
+    isDragOver.value = false
+  }, 50)
+}
+
+const handleDrop = (e: DragEvent) => {
+  e.preventDefault()
+
+  isDragOver.value = false
+
+  // 只有文件夹才能接收
+  if (props.item.type !== 'folder') {
+    return
+  }
+
+  // 获取拖拽的源ID
+  const sourceId = Number(e.dataTransfer!.getData('text/plain'))
+  if (!sourceId || sourceId === props.item.id) {
+    return
+  }
+
+  // 触发移动事件
+  emit('move-item', sourceId, props.item.id as number)
 }
 </script>
 
@@ -189,5 +298,24 @@ const handleCancel = () => {
 
 .editInputError {
   border-color: var(--color-error, #ff4d4f);
+}
+
+/* 拖拽样式 */
+.folderNode.dragging {
+  opacity: 0.5;
+}
+
+.folderNode.drag-over {
+  background-color: var(--color-primary-bg, #e6f7ff) !important;
+  border: 2px dashed var(--color-primary) !important;
+  border-radius: 4px;
+}
+
+.folderNode[draggable="true"] {
+  cursor: grab;
+}
+
+.folderNode[draggable="true"]:active {
+  cursor: grabbing;
 }
 </style>

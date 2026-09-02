@@ -6,6 +6,8 @@ export const themeTokens = {
   colorUnderline: '#18181b',
   colorBgTextHover: '#f4f4f5', // 自动转化为 CSS: --color-bg-text-hover
   colorIcon: '#71717a',
+  colorTextSecondary: '#6b7280',
+  colorTextTertiary: '#9ca3af',
 }
 
 export function initTheme() {
