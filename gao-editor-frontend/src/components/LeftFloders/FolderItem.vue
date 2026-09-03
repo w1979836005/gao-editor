@@ -65,9 +65,12 @@
 
 <script lang="ts" setup>
 import { ref, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { RightOutlined ,FolderOutlined,FileOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import type { FileItem } from './LeftFolders.vue'
+
+const router = useRouter()
 
 const props = defineProps<{
   item: FileItem
@@ -102,6 +105,10 @@ watch(() => props.item.isEditing, (newVal) => {
 const handleClick = () => {
   if (!props.item.isEditing) {
     emit('toggle', props.item.id)
+    // 点击文件时跳转到编辑页
+    if (props.item.type === 'file') {
+      router.push({ name: 'file-editor', params: { id: props.item.id } })
+    }
   }
 }
 

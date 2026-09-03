@@ -207,6 +207,8 @@ export const useLeftFoldersStore = defineStore('leftFolders', () => {
  const floderList = ref<FileItem[]>([])
  const activeFloderId = ref<null | number>(null)
  const isCollspe = ref(true)
+ // 文件内容存储（key 为文件 id，value 为 markdown 内容）
+ const fileContents = ref<Record<number, string>>({})
 
 
  /**
@@ -556,10 +558,48 @@ const moveItem = (sourceId: number, targetFolderId: number): { success: boolean;
     return path
   }
 
+  /**
+   * 根据 id 递归查找文件/文件夹项
+   * @param id 项的 id
+   * @returns 找到的项，未找到返回 null
+   */
+  const findItemById = (id: number): FileItem | null => {
+    const search = (items: FileItem[]): FileItem | null => {
+      for (const item of items) {
+        if (item.id === id) return item
+        if (item.children) {
+          const found = search(item.children)
+          if (found) return found
+        }
+      }
+      return null
+    }
+    return search(floderList.value)
+  }
+
+  /**
+   * 获取指定文件的内容
+   * @param fileId 文件 id
+   * @returns 文件内容字符串
+   */
+  const getFileContent = (fileId: number): string => {
+    return fileContents.value[fileId] ?? ''
+  }
+
+  /**
+   * 设置指定文件的内容
+   * @param fileId 文件 id
+   * @param content 文件内容
+   */
+  const setFileContent = (fileId: number, content: string) => {
+    fileContents.value[fileId] = content
+  }
+
   return {
     isCollspe,
     floderList,
     activeFloderId,
+    fileContents,
     handleToggle,
     setAllFoldersClose,
     setAllFoldersOpen,
@@ -567,6 +607,9 @@ const moveItem = (sourceId: number, targetFolderId: number): { success: boolean;
     finishAddFileItem,
     moveItem,
     toggleIsCollspe,
-    getActiveItemPath
+    getActiveItemPath,
+    findItemById,
+    getFileContent,
+    setFileContent
   }
 },{persist: true})
