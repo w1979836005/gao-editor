@@ -529,6 +529,33 @@ const moveItem = (sourceId: number, targetFolderId: number): { success: boolean;
 }
 
 
+  /**
+   * 获取当前选中项的路径
+   * @returns 路径数组，如 ['src', 'components', 'form', 'CustomInput.vue']
+   */
+  const getActiveItemPath = (): string[] => {
+    if (activeFloderId.value === null) return []
+
+    const path: string[] = []
+
+    const findPath = (items: FileItem[]): boolean => {
+      for (const item of items) {
+        if (item.id === activeFloderId.value) {
+          path.push(item.name)
+          return true
+        }
+        if (item.children && findPath(item.children)) {
+          path.unshift(item.name)
+          return true
+        }
+      }
+      return false
+    }
+
+    findPath(floderList.value)
+    return path
+  }
+
   return {
     isCollspe,
     floderList,
@@ -539,6 +566,7 @@ const moveItem = (sourceId: number, targetFolderId: number): { success: boolean;
     startAddFileItem,
     finishAddFileItem,
     moveItem,
-    toggleIsCollspe
+    toggleIsCollspe,
+    getActiveItemPath
   }
 },{persist: true})

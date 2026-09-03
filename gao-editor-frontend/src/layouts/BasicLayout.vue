@@ -17,7 +17,7 @@
         <RouterView />
       </div>
       <div class="footer">
-        <!-- FooterUrl -->
+        <FooterUrl />
       </div>
     </div>
   </div>
@@ -28,6 +28,7 @@ import GlobalHeader from '@/components/GlobalHeader.vue'
 import LeftFolders from '@/components/LeftFloders/LeftFolders.vue'
 import SiderTools from '@/components/SiderTools.vue'
 import WebTitle from '@/components/WebTitle.vue'
+import FooterUrl from '@/components/FooterUrl.vue'
 import { useLeftFoldersStore } from '@/stores/leftFoldersStore'
 
 
@@ -49,8 +50,11 @@ const leftFolderStroe = useLeftFoldersStore()
 }
 
 .right-container {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .header {
@@ -62,6 +66,15 @@ const leftFolderStroe = useLeftFoldersStore()
 
 .content {
   width: 100%;
+  flex: 1;
   padding: 16px;
+  overflow: auto;
+}
+
+.footer {
+  width: 100%;
+  height: 28px;
+  border-top: 1px solid var(--color-border);
+  background-color: var(--color-bg-container);
 }
 </style>
