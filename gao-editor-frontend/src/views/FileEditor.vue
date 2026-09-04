@@ -1,136 +1,214 @@
 <template>
-  <div id="fileEditor" @click="handleAreaClick">
-    <div
-      v-for="(block, index) in blocks"
-      :key="block.id"
-      class="block"
-      @click.stop
-    >
-      <!-- 编辑态 -->
-      <textarea
-        v-if="block.editing"
-        class="block-textarea"
-        v-model="block.raw"
-        @input="handleInput(index)"
-        @blur="renderBlock(index)"
-        @keydown="handleKeydown($event, index)"
-        :data-index="index"
-        spellcheck="false"
-      ></textarea>
+  <div id="fileEditor">
+    <div class="editor-content" @dblclick="handleDblClick">
+      <!-- 渲染态 / 编辑态 -->
+      <template v-for="(group, gIndex) in groups" :key="gIndex">
+        <!-- 编辑态：整个 group 一个 textarea -->
+        <textarea
+          v-if="group.editing"
+          class="block-textarea"
+          :value="group.mergedRaw"
+          @input="(e: Event) => handleGroupInput(e, gIndex)"
+          @blur="finishEditGroup(gIndex)"
+          @keydown="(e: KeyboardEvent) => handleKeydown(e, gIndex)"
+          :data-group-index="gIndex"
+          spellcheck="false"
+        ></textarea>
 
-      <!-- 渲染态 -->
-      <div
-        v-else
-        class="block-preview"
-        v-html="renderBlockHtml(block.raw)"
-        @dblclick="editBlock(index)"
-      ></div>
+        <!-- 渲染态 -->
+        <div
+          v-else
+          class="block-preview"
+          v-html="renderGroupHtml(group.mergedRaw)"
+        ></div>
+      </template>
+
+      <!-- 底部点击区 -->
+      <div class="bottom-area" @click="handleBottomClick"></div>
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
+import { reactive, computed, watch, nextTick, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { marked } from 'marked'
 import { useLeftFoldersStore } from '@/stores/leftFoldersStore'
 
+// ========== 类型 ==========
+
 interface Block {
-  id: number
   raw: string
-  editing: boolean
+  inCodeFence: boolean
 }
+
+interface Group {
+  mergedRaw: string
+  editing: boolean
+  blockStartIndex: number
+  blockCount: number
+}
+
+// ========== 状态 ==========
 
 const route = useRoute()
 const store = useLeftFoldersStore()
 const fileId = computed(() => Number(route.params.id))
 
 const blocks = reactive<Block[]>([])
-let blockIdCounter = 0
+const groups = reactive<Group[]>([])
 
-// ---------- 内容加载 ----------
+// ========== 拆分 ==========
 
-/** 按行拆分，代码块保持完整，空行保留 */
-const splitIntoBlocks = (content: string): string[] => {
+/** 拆分原始内容为 blocks */
+const splitIntoBlocks = (content: string): Block[] => {
   if (!content) return []
   const lines = content.split('\n')
-  const parts: string[] = []
+  const result: Block[] = []
   let current: string[] = []
   let inCodeFence = false
 
-  for (const line of lines) {
-    if (line.trimStart().startsWith('```')) {
-      if (!inCodeFence) {
-        // 进入代码块：先把之前的普通行保存
-        if (current.length > 0) {
-          parts.push(...current)
-          current = []
-        }
-        inCodeFence = true
-        current.push(line)
-      } else {
-        // 结束代码块
-        current.push(line)
-        parts.push(current.join('\n'))
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const isFence = line.trimStart().startsWith('```')
+
+    if (isFence && !inCodeFence) {
+      if (current.length > 0) {
+        result.push({ raw: current.join('\n'), inCodeFence: false })
         current = []
-        inCodeFence = false
       }
+      inCodeFence = true
+      current.push(line)
+    } else if (isFence && inCodeFence) {
+      current.push(line)
+      result.push({ raw: current.join('\n'), inCodeFence: false })
+      current = []
+      inCodeFence = false
     } else if (inCodeFence) {
       current.push(line)
+    } else if (line === '') {
+      const nextLine = lines[i + 1]
+      if (nextLine && nextLine.trimStart().startsWith('```')) {
+        current.push(line)
+      } else {
+        if (current.length > 0) {
+          result.push({ raw: current.join('\n'), inCodeFence: false })
+          current = []
+        }
+        result.push({ raw: '', inCodeFence: false })
+      }
     } else {
-      // 普通行（含空行）：每行独立一个 block
-      parts.push(line)
+      current.push(line)
     }
   }
-  // 剩余内容（未闭合的代码块等）
   if (current.length > 0) {
-    parts.push(current.join('\n'))
+    result.push({ raw: current.join('\n'), inCodeFence: false })
   }
-  return parts
+  return result
 }
+
+/** 判断文本是否有 ``` 开头（未闭合的代码块） */
+const hasUnmatchedFence = (raw: string): boolean => {
+  let inFence = false
+  for (const line of raw.split('\n')) {
+    if (line.trimStart().startsWith('```')) {
+      inFence = !inFence
+    }
+  }
+  return inFence
+}
+
+/** 将 blocks 按代码块分组为 groups */
+const buildGroups = () => {
+  groups.length = 0
+  let blockOffset = 0
+
+  let i = 0
+  while (i < blocks.length) {
+    const block = blocks[i]
+
+    if (hasUnmatchedFence(block.raw)) {
+      // 开始收集整个代码块（直到遇到有闭合 ``` 的 block）
+      const collected = [block.raw]
+      let j = i + 1
+      while (j < blocks.length) {
+        collected.push(blocks[j].raw)
+        if (hasUnmatchedFence(collected.join('\n')) === false) {
+          break
+        }
+        j++
+      }
+      groups.push({
+        mergedRaw: collected.join('\n'),
+        editing: false,
+        blockStartIndex: blockOffset,
+        blockCount: j - i + 1,
+      })
+      blockOffset += j - i + 1
+      i = j + 1
+    } else {
+      groups.push({
+        mergedRaw: block.raw,
+        editing: false,
+        blockStartIndex: blockOffset,
+        blockCount: 1,
+      })
+      blockOffset++
+      i++
+    }
+  }
+}
+
+// ========== 加载/同步 ==========
 
 const loadContent = (content: string) => {
   blocks.length = 0
-  blockIdCounter = 0
-
-  const parts = splitIntoBlocks(content)
-  if (parts.length === 0) {
-    blocks.push({ id: blockIdCounter++, raw: '', editing: true })
-    return
+  blocks.push(...splitIntoBlocks(content))
+  if (blocks.length === 0) {
+    blocks.push({ raw: '', inCodeFence: false })
   }
-
-  for (const part of parts) {
-    blocks.push({
-      id: blockIdCounter++,
-      raw: part,
-      editing: false,
-    })
-  }
+  buildGroups()
 }
-
-onMounted(() => loadContent(store.getFileContent(fileId.value)))
-watch(fileId, (newId) => loadContent(store.getFileContent(newId)))
-
-// ---------- 同步到 store ----------
 
 const syncContent = () => {
   const content = blocks.map((b) => b.raw).join('\n')
   store.setFileContent(fileId.value, content)
 }
 
-// ---------- 渲染 ----------
+onMounted(() => loadContent(store.getFileContent(fileId.value)))
+watch(fileId, (newId) => loadContent(store.getFileContent(newId)))
 
-const renderBlockHtml = (raw: string): string => {
+// ========== 渲染 ==========
+
+const renderGroupHtml = (raw: string): string => {
   if (!raw.trim()) return '<br/>'
-  return marked(raw, { breaks: true }) as string
+  return marked.parse(raw, { breaks: true }) as string
 }
 
-// ---------- 编辑态切换 ----------
+// ========== 编辑 ==========
 
-const focusTextarea = (index: number) => {
+const finishEditGroup = (gIndex: number) => {
+  const group = groups[gIndex]
+  if (!group) return
+  const editedRaw = group.mergedRaw
+
+  // 用编辑后的内容替换原始 blocks
+  const newBlockLines = editedRaw.split('\n')
+  const newBlocks: Block[] = newBlockLines.map((line) => ({
+    raw: line,
+    inCodeFence: false,
+  }))
+
+  blocks.splice(group.blockStartIndex, group.blockCount, ...newBlocks)
+  group.editing = false
+  buildGroups()
+  syncContent()
+}
+
+const focusTextarea = (gIndex: number) => {
   nextTick(() => {
     const el = document.querySelector<HTMLTextAreaElement>(
-      `textarea[data-index="${index}"]`
+      `textarea[data-group-index="${gIndex}"]`
     )
     if (el) {
       el.focus()
@@ -140,120 +218,115 @@ const focusTextarea = (index: number) => {
   })
 }
 
-const editBlock = (index: number) => {
-  const block = blocks[index]
-  if (!block) return
-  block.editing = true
-  focusTextarea(index)
-}
-
-const renderBlock = (index: number) => {
-  const block = blocks[index]
-  if (!block) return
-  block.editing = false
-}
-
-// ---------- 点击空白区域 ----------
-
-const handleAreaClick = () => {
-  // 如果最后一行已经是编辑态，直接聚焦
-  const lastIdx = blocks.length - 1
-  if (lastIdx >= 0 && blocks[lastIdx]?.editing) {
-    focusTextarea(lastIdx)
-    return
-  }
-  // 否则在末尾追加一个新的空编辑行
-  blocks.push({ id: blockIdCounter++, raw: '', editing: true })
-  focusTextarea(blocks.length - 1)
-}
-
-// ---------- 自动调高 ----------
-
 const autoResize = (el: HTMLTextAreaElement) => {
   el.style.height = 'auto'
   el.style.height = el.scrollHeight + 'px'
 }
 
-// ---------- 事件 ----------
+// ========== 事件 ==========
 
-const handleInput = (index: number) => {
-  syncContent()
-  // 自动调高
-  const el = document.querySelector<HTMLTextAreaElement>(
-    `textarea[data-index="${index}"]`
-  )
-  if (el) autoResize(el)
-}
+const handleDblClick = (e: MouseEvent) => {
+  // 通过点击位置找到对应的 group
+  const target = e.target as HTMLElement
+  const preview = target.closest('.block-preview')
+  if (!preview) return
 
-/** 判断当前 block 是否是代码块（包含 ``` 标记） */
-const isCodeBlock = (raw: string): boolean => {
-  const lines = raw.split('\n')
-  let inFence = false
-  for (const line of lines) {
-    if (line.trimStart().startsWith('```')) {
-      inFence = !inFence
+  const allPreviews = document.querySelectorAll('.block-preview')
+  const idx = Array.from(allPreviews).indexOf(preview)
+  if (idx < 0) return
+
+  // 计算 group 索引（跳过正在编辑的 group）
+  let gIdx = 0
+  let renderedCount = 0
+  for (let i = 0; i < groups.length; i++) {
+    if (!groups[i].editing) {
+      if (renderedCount === idx) {
+        gIdx = i
+        break
+      }
+      renderedCount++
     }
   }
-  return inFence // true = 有开头没结尾，说明整个 block 是一个代码块
+
+  groups[gIdx].editing = true
+  focusTextarea(gIdx)
 }
 
-const handleKeydown = (e: KeyboardEvent, index: number) => {
+const handleGroupInput = (e: Event, gIndex: number) => {
   const el = e.target as HTMLTextAreaElement
-  const block = blocks[index]
+  groups[gIndex].mergedRaw = el.value
+  autoResize(el)
+}
+
+const handleBottomClick = () => {
+  // 在末尾追加新 block
+  blocks.push({ raw: '', inCodeFence: false })
+  buildGroups()
+  syncContent()
+  // 编辑最后一个 group
+  const lastG = groups[groups.length - 1]
+  if (lastG) {
+    lastG.editing = true
+    focusTextarea(groups.length - 1)
+  }
+}
+
+const handleKeydown = (e: KeyboardEvent, gIndex: number) => {
+  const el = e.target as HTMLTextAreaElement
+  const group = groups[gIndex]
 
   if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-
-    if (block && isCodeBlock(block.raw)) {
-      // 代码块内：插入换行，保持在同一个 block
+    // 检查是否在代码块内
+    if (hasUnmatchedFence(group.mergedRaw)) {
       const pos = el.selectionStart
-      const before = block.raw.slice(0, pos)
-      const after = block.raw.slice(pos)
-      block.raw = before + '\n' + after
-      syncContent()
-      nextTick(() => {
-        el.setSelectionRange(pos + 1, pos + 1)
-        autoResize(el)
-      })
+      const textBefore = group.mergedRaw.slice(0, pos)
+      const currentLine = textBefore.split('\n').pop() ?? ''
+
+      if (currentLine.trim() === '') {
+        // 空行回车 → 闭合代码块，退出编辑
+        e.preventDefault()
+        group.mergedRaw = group.mergedRaw.replace(/\n$/, '') + '\n```'
+        finishEditGroup(gIndex)
+      }
+      // 非空行：让 textarea 自然换行
     } else {
-      // 普通段落：在光标位置拆分
+      // 普通段落：回车拆分为新 group
+      e.preventDefault()
       const pos = el.selectionStart
-      const before = block.raw.slice(0, pos)
-      const after = block.raw.slice(pos)
-      block.raw = before
-      block.editing = false
-      blocks.splice(index + 1, 0, {
-        id: blockIdCounter++,
-        raw: after,
-        editing: true,
-      })
+      const before = group.mergedRaw.slice(0, pos)
+      const after = group.mergedRaw.slice(pos)
+      group.mergedRaw = before
+
+      // 先保存当前 group
+      finishEditGroup(gIndex)
+
+      // 在后面插入新 block
+      const insertIdx = group.blockStartIndex + group.blockCount
+      blocks.splice(insertIdx, 0, { raw: after, inCodeFence: false })
+      buildGroups()
       syncContent()
-      focusTextarea(index + 1)
+
+      // 编辑新 group
+      const newGIndex = gIndex + 1
+      if (groups[newGIndex]) {
+        groups[newGIndex].editing = true
+        focusTextarea(newGIndex)
+      }
     }
   }
 
-  if (e.key === 'Backspace' && !el.value && blocks.length > 1) {
-    e.preventDefault()
-    blocks.splice(index, 1)
-    syncContent()
-    editBlock(Math.max(0, index - 1))
-  }
-
-  if (e.key === 'ArrowUp') {
+  if (e.key === 'Backspace') {
     const pos = el.selectionStart
-    if (pos === 0 && index > 0) {
+    if (pos === 0 && group.mergedRaw === '' && groups.length > 1) {
       e.preventDefault()
-      renderBlock(index)
-      editBlock(index - 1)
-    }
-  }
-
-  if (e.key === 'ArrowDown') {
-    const pos = el.selectionStart
-    if (pos === el.value.length && index < blocks.length - 1) {
-      e.preventDefault()
-      renderBlock(index)
-      editBlock(index + 1)
+      const removedBlockCount = group.blockCount
+      blocks.splice(group.blockStartIndex, removedBlockCount)
+      buildGroups()
+      syncContent()
+      if (gIndex > 0) {
+        groups[gIndex - 1].editing = true
+        focusTextarea(gIndex - 1)
+      }
     }
   }
 }
@@ -264,13 +337,11 @@ const handleKeydown = (e: KeyboardEvent, index: number) => {
   width: 100%;
   height: 100%;
   overflow-y: auto;
-  padding: 16px 32px;
-  cursor: text;
 }
 
-.block {
+.editor-content {
   max-width: 800px;
-  min-height: 1.8em;
+  padding: 16px 32px;
 }
 
 /* 渲染态 */
@@ -306,9 +377,15 @@ const handleKeydown = (e: KeyboardEvent, index: number) => {
   tab-size: 2;
 }
 
+/* 底部点击区 */
+.bottom-area {
+  min-height: 200px;
+  cursor: text;
+}
+
 /* ========== Markdown 渲染样式 ========== */
 
-.block-preview :deep(h1) {
+.editor-content :deep(h1) {
   font-size: 28px;
   font-weight: 700;
   margin: 20px 0 8px;
@@ -316,7 +393,7 @@ const handleKeydown = (e: KeyboardEvent, index: number) => {
   border-bottom: 1px solid var(--color-border);
 }
 
-.block-preview :deep(h2) {
+.editor-content :deep(h2) {
   font-size: 22px;
   font-weight: 600;
   margin: 16px 0 6px;
@@ -324,25 +401,25 @@ const handleKeydown = (e: KeyboardEvent, index: number) => {
   border-bottom: 1px solid var(--color-border);
 }
 
-.block-preview :deep(h3) {
+.editor-content :deep(h3) {
   font-size: 18px;
   font-weight: 600;
   margin: 12px 0 4px;
 }
 
-.block-preview :deep(h4),
-.block-preview :deep(h5),
-.block-preview :deep(h6) {
+.editor-content :deep(h4),
+.editor-content :deep(h5),
+.editor-content :deep(h6) {
   font-size: 14px;
   font-weight: 600;
   margin: 10px 0 4px;
 }
 
-.block-preview :deep(p) {
-  margin: 0;
+.editor-content :deep(p) {
+  margin: 4px 0;
 }
 
-.block-preview :deep(code) {
+.editor-content :deep(code) {
   font-family: var(--font-editor-mono);
   background-color: var(--color-bg-text-hover);
   padding: 2px 6px;
@@ -350,70 +427,70 @@ const handleKeydown = (e: KeyboardEvent, index: number) => {
   font-size: 13px;
 }
 
-.block-preview :deep(pre) {
+.editor-content :deep(pre) {
   background-color: var(--color-bg-text-hover);
   padding: 14px 18px;
   border-radius: 8px;
   overflow-x: auto;
-  margin: 4px 0;
+  margin: 8px 0;
 }
 
-.block-preview :deep(pre code) {
+.editor-content :deep(pre code) {
   background: none;
   padding: 0;
 }
 
-.block-preview :deep(blockquote) {
+.editor-content :deep(blockquote) {
   border-left: 4px solid var(--color-primary);
   padding-left: 14px;
-  margin: 4px 0;
+  margin: 8px 0;
   color: var(--color-text-secondary);
 }
 
-.block-preview :deep(ul),
-.block-preview :deep(ol) {
+.editor-content :deep(ul),
+.editor-content :deep(ol) {
   padding-left: 24px;
   margin: 4px 0;
 }
 
-.block-preview :deep(li) {
+.editor-content :deep(li) {
   margin: 2px 0;
 }
 
-.block-preview :deep(a) {
+.editor-content :deep(a) {
   color: var(--color-primary);
   text-decoration: none;
 }
 
-.block-preview :deep(a:hover) {
+.editor-content :deep(a:hover) {
   text-decoration: underline;
 }
 
-.block-preview :deep(hr) {
+.editor-content :deep(hr) {
   border: none;
   border-top: 1px solid var(--color-border);
   margin: 12px 0;
 }
 
-.block-preview :deep(table) {
+.editor-content :deep(table) {
   border-collapse: collapse;
   width: 100%;
   margin: 8px 0;
 }
 
-.block-preview :deep(th),
-.block-preview :deep(td) {
+.editor-content :deep(th),
+.editor-content :deep(td) {
   border: 1px solid var(--color-border);
   padding: 6px 10px;
   text-align: left;
 }
 
-.block-preview :deep(th) {
+.editor-content :deep(th) {
   background-color: var(--color-bg-text-hover);
   font-weight: 600;
 }
 
-.block-preview :deep(img) {
+.editor-content :deep(img) {
   max-width: 100%;
   border-radius: 4px;
 }

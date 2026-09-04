@@ -2,21 +2,22 @@
   <div id="folderItem">
     <!-- 当前行-->
     <div
-    :class="[
-      'folderNode',
-      { 'active': activeFolderId === item.id },
-      { 'drag-over': isDragOver },
-      { 'dragging': isDragging }
-    ]"
-    :style="{ paddingLeft: `${level * 16 + 12}px` }"
-    :draggable="!item.isEditing"
-    @click="handleClick"
-    @dragstart="handleDragStart"
-    @dragend="handleDragEnd"
-    @dragover="handleDragOver"
-    @dragenter="handleDragEnter"
-    @dragleave="handleDragLeave"
-    @drop="handleDrop">
+      :class="[
+        'folderNode',
+        { active: activeFolderId === item.id },
+        { 'drag-over': isDragOver },
+        { dragging: isDragging },
+      ]"
+      :style="{ paddingLeft: `${level * 16 + 12}px` }"
+      :draggable="!item.isEditing"
+      @click="handleClick"
+      @dragstart="handleDragStart"
+      @dragend="handleDragEnd"
+      @dragover="handleDragOver"
+      @dragenter="handleDragEnter"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
+    >
       <!-- 是否有箭头-->
       <span v-if="item.type === 'folder'" class="arrowContainer">
         <RightOutlined :class="['arrowIcon', 'icon', { isOpen: item.isOpen }]" />
@@ -35,7 +36,7 @@
       <!-- 名称或输入框 -->
       <template v-if="item.isEditing">
         <input
-          :class="['editInput', { 'editInputError': hasError }]"
+          :class="['editInput', { editInputError: hasError }]"
           v-model="editName"
           @blur="handleBlur"
           @keyup.enter="handleEnter"
@@ -45,20 +46,55 @@
         />
       </template>
       <template v-else>
-        <span class="floderName">{{ item.name }}</span>
+        <span class="floderName" v-if="item.type === 'folder'">{{ item.name }}</span>
+        <span class="floderName" v-else>{{ item.name }}.md</span>
       </template>
+
+      <a-dropdown trigger="click">
+        <MoreOutlined class="icon more-icon" />
+        <template #overlay>
+          <a-menu @click="onClick">
+            <a-menu-item key="refresh">
+              <a href="javascript:;">刷新</a>
+            </a-menu-item>
+            <a-menu-item key="copy_link">
+              <a href="javascript:;">复制链接</a>
+            </a-menu-item>
+            <!-- <a-menu-item key="copy">
+              <a href="javascript:;">复制</a>
+            </a-menu-item> -->
+            <!-- <a-menu-item key="cut">
+              <a href="javascript:;">剪切</a>
+            </a-menu-item> -->
+            <a-menu-item key="rename">
+              <a href="javascript:;">重命名</a>
+            </a-menu-item>
+            <a-menu-item key="delete">
+              <a href="javascript:;">删除</a>
+            </a-menu-item>
+          </a-menu>
+        </template>
+      </a-dropdown>
     </div>
 
     <!-- 递归子项 -->
     <div v-if="item.type === 'folder' && item.isOpen && item.children">
-      <FolderItem v-for="child in item.children"
-       :key="child.id" :item="child"
-       :level="level + 1"
-       :active-folder-id="activeFolderId"
-       @toggle="emit('toggle',$event)"
-       @finish-edit="(id: number, name: string, callback: (result: { success: boolean; message?: string }) => void) => emit('finish-edit', id, name, callback)"
-       @move-item="(sourceId: number, targetId: number) => emit('move-item', sourceId, targetId)"
-        />
+      <FolderItem
+        v-for="child in item.children"
+        :key="child.id"
+        :item="child"
+        :level="level + 1"
+        :active-folder-id="activeFolderId"
+        @toggle="emit('toggle', $event)"
+        @finish-edit="
+          (
+            id: number,
+            name: string,
+            callback: (result: { success: boolean; message?: string }) => void,
+          ) => emit('finish-edit', id, name, callback)
+        "
+        @move-item="(sourceId: number, targetId: number) => emit('move-item', sourceId, targetId)"
+      />
     </div>
   </div>
 </template>
@@ -66,11 +102,14 @@
 <script lang="ts" setup>
 import { ref, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { RightOutlined ,FolderOutlined,FileOutlined } from '@ant-design/icons-vue'
+import { RightOutlined, FolderOutlined, FileOutlined, MoreOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import type { FileItem } from './LeftFolders.vue'
+import type { MenuProps } from 'ant-design-vue'
+import { useLeftFoldersStore } from '@/stores/leftFoldersStore.ts'
 
 const router = useRouter()
+const leftFoldersStore = useLeftFoldersStore()
 
 const props = defineProps<{
   item: FileItem
@@ -80,7 +119,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toggle: [id: string | number]
-  'finish-edit': [id: number, name: string, callback: (result: { success: boolean; message?: string }) => void]
+  'finish-edit': [
+    id: number,
+    name: string,
+    callback: (result: { success: boolean; message?: string }) => void,
+  ]
   'move-item': [sourceId: number, targetId: number]
 }>()
 
@@ -92,15 +135,19 @@ const isDragging = ref(false)
 let dragOverTimer: ReturnType<typeof setTimeout> | null = null
 
 // 当进入编辑状态时，聚焦输入框
-watch(() => props.item.isEditing, (newVal) => {
-  if (newVal) {
-    editName.value = ''
-    hasError.value = false
-    nextTick(() => {
-      editInputRef.value?.focus()
-    })
-  }
-}, { immediate: true })
+watch(
+  () => props.item.isEditing,
+  (newVal) => {
+    if (newVal) {
+      editName.value = ''
+      hasError.value = false
+      nextTick(() => {
+        editInputRef.value?.focus()
+      })
+    }
+  },
+  { immediate: true },
+)
 
 const handleClick = () => {
   if (!props.item.isEditing) {
@@ -234,10 +281,68 @@ const handleDrop = (e: DragEvent) => {
   // 触发移动事件
   emit('move-item', sourceId, props.item.id as number)
 }
+
+const onClick: MenuProps['onClick'] = ({ key }) => {
+  switch (key) {
+    case 'refresh':
+      console.log('refresh')
+      location.reload()
+      break
+    case 'copy_link':
+      console.log('copy_link')
+      copyLInk()
+      break
+    case 'copy':
+      console.log('copy')
+      break
+    // case 'cut':
+    //   console.log('cut')
+    //   break
+    case 'rename':
+      console.log('rename')
+      renameFile()
+      break
+    case 'delete':
+      console.log('delete')
+      deleteFile()
+      break
+    default:
+      console.log('错误数据')
+      break
+  }
+}
+
+/**
+ * 复制链接
+ */
+const copyLInk = async () => {
+  //1.拼接复制链接
+  const COPY_LINK = `${import.meta.env.VITE_FRONT_BASE_URL}/file/${leftFoldersStore.activeFloderId}`
+  //2. 复制到剪贴板
+  await navigator.clipboard.writeText(COPY_LINK)
+
+  //3. 提示用户成功复制
+  message.success('链接已复制到剪贴板')
+}
+
+/**
+ * 重命名文件夹
+ */
+const renameFile = () => {
+  console.log('重命名文件夹')
+}
+
+/**
+ * 删除文件/文件夹
+ */
+const deleteFile = () => {
+  console.log('删除文件/文件夹')
+}
 </script>
 
 <style scoped>
 .folderNode {
+  position: relative;
   width: 100%;
   height: 28px;
   border-bottom: 1px solid var(--color-border);
@@ -318,11 +423,23 @@ const handleDrop = (e: DragEvent) => {
   border-radius: 4px;
 }
 
-.folderNode[draggable="true"] {
+.folderNode[draggable='true'] {
   cursor: grab;
 }
 
-.folderNode[draggable="true"]:active {
+.folderNode[draggable='true']:active {
   cursor: grabbing;
+}
+
+.more-icon {
+  position: absolute;
+  right: 4px;
+  opacity: 0;
+}
+
+/* 当父元素处于 hover 状态，或者处于 active 状态时显示 */
+.folderNode:hover .more-icon,
+.folderNode.active .more-icon {
+  opacity: 1;
 }
 </style>

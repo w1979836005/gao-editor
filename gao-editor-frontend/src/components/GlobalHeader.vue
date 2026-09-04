@@ -7,12 +7,14 @@
       <div v-else>
         <MenuFoldOutlined class="icon" @click="leftFolderstore.toggleIsCollspe" />
       </div>
-      <!-- 文件名 -->
-      <span v-if="currentFileName" class="file-name">
-        <FileOutlined style="margin-right: 6px; font-size: 14px;" />
-        {{ currentFileName }}
-      </span>
     </div>
+    <!-- <div class="file-container"> -->
+            <!-- 文件名 -->
+      <!-- <span v-if="currentFileName" class="file-name"> -->
+        <!-- <FileOutlined style="margin-right: 2px; font-size: 14px;" /> -->
+        <!-- {{ currentFileName }}.md -->
+      <!-- </span> -->
+    <!-- </div> -->
     <div class="right-section">
       <SearchOutlined class="icon" @click="handleSearch" />
       <ShareAltOutlined class="icon" @click="handleShare" />
@@ -21,21 +23,21 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+// import { computed } from 'vue'
+// import { useRoute } from 'vue-router'
 import { useLeftFoldersStore } from '@/stores/leftFoldersStore'
-import { MenuUnfoldOutlined, MenuFoldOutlined, SearchOutlined, ShareAltOutlined, FileOutlined } from '@ant-design/icons-vue'
+import { MenuUnfoldOutlined, MenuFoldOutlined, SearchOutlined, ShareAltOutlined } from '@ant-design/icons-vue'
 
 const leftFolderstore = useLeftFoldersStore()
-const route = useRoute()
+// const route = useRoute()
 
 // 当处于文件编辑页时，显示文件名
-const currentFileName = computed(() => {
-  if (route.name !== 'file-editor') return ''
-  const id = Number(route.params.id)
-  const item = leftFolderstore.findItemById(id)
-  return item?.name ?? ''
-})
+// const currentFileName = computed(() => {
+//   if (route.name !== 'file-editor') return ''
+//   const id = Number(route.params.id)
+//   const item = leftFolderstore.findItemById(id)
+//   return item?.name ?? ''
+// })
 
 const handleSearch = () => {
   // TODO: 实现搜索功能
@@ -66,7 +68,7 @@ const handleShare = () => {
 }
 
 .file-name {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--color-text);
   white-space: nowrap;
