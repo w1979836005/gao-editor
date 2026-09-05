@@ -1,497 +1,326 @@
 <template>
   <div id="fileEditor">
-    <div class="editor-content" @dblclick="handleDblClick">
-      <!-- 渲染态 / 编辑态 -->
-      <template v-for="(group, gIndex) in groups" :key="gIndex">
-        <!-- 编辑态：整个 group 一个 textarea -->
-        <textarea
-          v-if="group.editing"
-          class="block-textarea"
-          :value="group.mergedRaw"
-          @input="(e: Event) => handleGroupInput(e, gIndex)"
-          @blur="finishEditGroup(gIndex)"
-          @keydown="(e: KeyboardEvent) => handleKeydown(e, gIndex)"
-          :data-group-index="gIndex"
-          spellcheck="false"
-        ></textarea>
-
-        <!-- 渲染态 -->
-        <div
-          v-else
-          class="block-preview"
-          v-html="renderGroupHtml(group.mergedRaw)"
-        ></div>
-      </template>
-
-      <!-- 底部点击区 -->
-      <div class="bottom-area" @click="handleBottomClick"></div>
+    <div class="workspace">
+      <EditorContent v-if="editor" :editor="editor" class="tiptap-content" />
+      <aside v-if="headings.length" class="outline-pane">
+        <button
+          v-for="heading in headings"
+          :key="heading.id"
+          class="outline-item"
+          :class="[`level-${heading.level}`, { active: activeHeading === heading.index }]"
+          type="button"
+          @click="jumpToHeading(heading.index)"
+        >
+          {{ heading.text }}
+        </button>
+      </aside>
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { reactive, computed, watch, nextTick, onMounted } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { marked } from 'marked'
+import { EditorContent, useEditor } from '@tiptap/vue-3'
+import StarterKit from '@tiptap/starter-kit'
+import Link from '@tiptap/extension-link'
+import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import { all, createLowlight } from 'lowlight'
+import { Markdown } from '@tiptap/markdown'
 import { useLeftFoldersStore } from '@/stores/leftFoldersStore'
-
-// ========== 类型 ==========
-
-interface Block {
-  raw: string
-  inCodeFence: boolean
-}
-
-interface Group {
-  mergedRaw: string
-  editing: boolean
-  blockStartIndex: number
-  blockCount: number
-}
-
-// ========== 状态 ==========
 
 const route = useRoute()
 const store = useLeftFoldersStore()
 const fileId = computed(() => Number(route.params.id))
-
-const blocks = reactive<Block[]>([])
-const groups = reactive<Group[]>([])
-
-// ========== 拆分 ==========
-
-/** 拆分原始内容为 blocks */
-const splitIntoBlocks = (content: string): Block[] => {
-  if (!content) return []
-  const lines = content.split('\n')
-  const result: Block[] = []
-  let current: string[] = []
-  let inCodeFence = false
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    const isFence = line.trimStart().startsWith('```')
-
-    if (isFence && !inCodeFence) {
-      if (current.length > 0) {
-        result.push({ raw: current.join('\n'), inCodeFence: false })
-        current = []
-      }
-      inCodeFence = true
-      current.push(line)
-    } else if (isFence && inCodeFence) {
-      current.push(line)
-      result.push({ raw: current.join('\n'), inCodeFence: false })
-      current = []
-      inCodeFence = false
-    } else if (inCodeFence) {
-      current.push(line)
-    } else if (line === '') {
-      const nextLine = lines[i + 1]
-      if (nextLine && nextLine.trimStart().startsWith('```')) {
-        current.push(line)
-      } else {
-        if (current.length > 0) {
-          result.push({ raw: current.join('\n'), inCodeFence: false })
-          current = []
-        }
-        result.push({ raw: '', inCodeFence: false })
-      }
-    } else {
-      current.push(line)
-    }
-  }
-  if (current.length > 0) {
-    result.push({ raw: current.join('\n'), inCodeFence: false })
-  }
-  return result
-}
-
-/** 判断文本是否有 ``` 开头（未闭合的代码块） */
-const hasUnmatchedFence = (raw: string): boolean => {
-  let inFence = false
-  for (const line of raw.split('\n')) {
-    if (line.trimStart().startsWith('```')) {
-      inFence = !inFence
-    }
-  }
-  return inFence
-}
-
-/** 将 blocks 按代码块分组为 groups */
-const buildGroups = () => {
-  groups.length = 0
-  let blockOffset = 0
-
-  let i = 0
-  while (i < blocks.length) {
-    const block = blocks[i]
-
-    if (hasUnmatchedFence(block.raw)) {
-      // 开始收集整个代码块（直到遇到有闭合 ``` 的 block）
-      const collected = [block.raw]
-      let j = i + 1
-      while (j < blocks.length) {
-        collected.push(blocks[j].raw)
-        if (hasUnmatchedFence(collected.join('\n')) === false) {
-          break
-        }
-        j++
-      }
-      groups.push({
-        mergedRaw: collected.join('\n'),
-        editing: false,
-        blockStartIndex: blockOffset,
-        blockCount: j - i + 1,
-      })
-      blockOffset += j - i + 1
-      i = j + 1
-    } else {
-      groups.push({
-        mergedRaw: block.raw,
-        editing: false,
-        blockStartIndex: blockOffset,
-        blockCount: 1,
-      })
-      blockOffset++
-      i++
-    }
-  }
-}
-
-// ========== 加载/同步 ==========
-
-const loadContent = (content: string) => {
-  blocks.length = 0
-  blocks.push(...splitIntoBlocks(content))
-  if (blocks.length === 0) {
-    blocks.push({ raw: '', inCodeFence: false })
-  }
-  buildGroups()
-}
-
-const syncContent = () => {
-  const content = blocks.map((b) => b.raw).join('\n')
-  store.setFileContent(fileId.value, content)
-}
-
-onMounted(() => loadContent(store.getFileContent(fileId.value)))
-watch(fileId, (newId) => loadContent(store.getFileContent(newId)))
-
-// ========== 渲染 ==========
-
-const renderGroupHtml = (raw: string): string => {
-  if (!raw.trim()) return '<br/>'
-  return marked.parse(raw, { breaks: true }) as string
-}
-
-// ========== 编辑 ==========
-
-const finishEditGroup = (gIndex: number) => {
-  const group = groups[gIndex]
-  if (!group) return
-  const editedRaw = group.mergedRaw
-
-  // 用编辑后的内容替换原始 blocks
-  const newBlockLines = editedRaw.split('\n')
-  const newBlocks: Block[] = newBlockLines.map((line) => ({
-    raw: line,
-    inCodeFence: false,
-  }))
-
-  blocks.splice(group.blockStartIndex, group.blockCount, ...newBlocks)
-  group.editing = false
-  buildGroups()
-  syncContent()
-}
-
-const focusTextarea = (gIndex: number) => {
-  nextTick(() => {
-    const el = document.querySelector<HTMLTextAreaElement>(
-      `textarea[data-group-index="${gIndex}"]`
-    )
-    if (el) {
-      el.focus()
-      el.setSelectionRange(el.value.length, el.value.length)
-      autoResize(el)
-    }
+const lowlight = createLowlight(all)
+const activeHeading = ref<number | null>(null)
+function enhanceCodeBlocks(root: HTMLElement) {
+  root.querySelectorAll('pre').forEach((pre) => {
+    if (pre.querySelector('.code-copy-button')) return
+    const button = document.createElement('button')
+    button.className = 'code-copy-button'
+    button.type = 'button'
+    button.contentEditable = 'false'
+    button.textContent = '复制'
+    button.addEventListener('mousedown', (event) => event.preventDefault())
+    button.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(pre.querySelector('code')?.textContent || '')
+      button.textContent = '已复制'
+      window.setTimeout(() => {
+        button.textContent = '复制'
+      }, 1200)
+    })
+    pre.appendChild(button)
   })
 }
+const editor = useEditor({
+  extensions: [
+    StarterKit.configure({ codeBlock: false }),
+    Link.configure({ openOnClick: false }),
+    Table.configure({ resizable: true }),
+    TableRow,
+    TableHeader,
+    TableCell,
+    CodeBlockLowlight.configure({ lowlight }),
+    Markdown,
+  ],
+  content: store.getFileContent(fileId.value),
+  contentType: 'markdown',
+  editable: true,
+  autofocus: true,
+  onCreate: ({ editor: instance }) => nextTick(() => enhanceCodeBlocks(instance.view.dom)),
+  onUpdate: ({ editor: instance }) => {
+    store.setFileContent(fileId.value, instance.getMarkdown())
+    nextTick(() => enhanceCodeBlocks(instance.view.dom))
+  },
+})
 
-const autoResize = (el: HTMLTextAreaElement) => {
-  el.style.height = 'auto'
-  el.style.height = el.scrollHeight + 'px'
+const headings = computed(() =>
+  store
+    .getFileContent(fileId.value)
+    .split('\n')
+    .flatMap((line, index) => {
+      const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line)
+      return match
+        ? [
+            {
+              id: `heading-${index}`,
+              text: match[2].replace(/[*_`~]/g, '').trim(),
+              level: match[1].length,
+              index,
+            },
+          ]
+        : []
+    }),
+)
+watch(headings, () => nextTick(updateActiveHeading), { deep: true })
+
+watch(fileId, (id) =>
+  editor.value?.commands.setContent(store.getFileContent(id), { contentType: 'markdown' }),
+)
+const jumpToHeading = (index: number) => {
+  activeHeading.value = index
+  const nodes = editor.value?.view.dom.querySelectorAll('h1,h2,h3,h4,h5,h6')
+  nodes?.[headings.value.findIndex((heading) => heading.index === index)]?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
+  })
 }
-
-// ========== 事件 ==========
-
-const handleDblClick = (e: MouseEvent) => {
-  // 通过点击位置找到对应的 group
-  const target = e.target as HTMLElement
-  const preview = target.closest('.block-preview')
-  if (!preview) return
-
-  const allPreviews = document.querySelectorAll('.block-preview')
-  const idx = Array.from(allPreviews).indexOf(preview)
-  if (idx < 0) return
-
-  // 计算 group 索引（跳过正在编辑的 group）
-  let gIdx = 0
-  let renderedCount = 0
-  for (let i = 0; i < groups.length; i++) {
-    if (!groups[i].editing) {
-      if (renderedCount === idx) {
-        gIdx = i
-        break
-      }
-      renderedCount++
+const updateActiveHeading = () => {
+  const nodes = editor.value?.view.dom.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6')
+  if (!nodes?.length) return
+  const container = scrollContainer || editor.value?.view.dom
+  // 到达文档底部时，最后一个标题应保持 active，即使它无法继续滚动到顶部阈值。
+  if (container && container.scrollHeight - container.scrollTop - container.clientHeight <= 12) {
+    activeHeading.value = headings.value[headings.value.length - 1]?.index ?? null
+    return
+  }
+  const containerTop = container?.getBoundingClientRect().top ?? 0
+  let current = 0
+  nodes.forEach((node, index) => {
+    if (node.getBoundingClientRect().top - containerTop <= 90) current = index
+  })
+  activeHeading.value = headings.value[current]?.index ?? null
+}
+let scrollContainer: HTMLElement | null = null
+let editorScrollLayer: HTMLElement | null = null
+watch(editor, (instance) => {
+  if (!instance) return
+  nextTick(() => {
+    enhanceCodeBlocks(instance.view.dom)
+    scrollContainer = instance.view.dom.closest('.tiptap-content') as HTMLElement | null
+    editorScrollLayer = instance.view.dom
+    scrollContainer?.addEventListener('scroll', updateActiveHeading, { passive: true })
+    editorScrollLayer.addEventListener('scroll', updateActiveHeading, { passive: true })
+    updateActiveHeading()
+  })
+})
+onMounted(() => {
+  // EditorContent 组件挂载后再兜底绑定一次，兼容不同 Tiptap 版本的滚动层结构。
+  window.setTimeout(() => {
+    const root = document.querySelector<HTMLElement>('.tiptap-content')
+    if (root && root !== scrollContainer) {
+      scrollContainer = root
+      root.addEventListener('scroll', updateActiveHeading, { passive: true, capture: true })
+      updateActiveHeading()
     }
-  }
-
-  groups[gIdx].editing = true
-  focusTextarea(gIdx)
-}
-
-const handleGroupInput = (e: Event, gIndex: number) => {
-  const el = e.target as HTMLTextAreaElement
-  groups[gIndex].mergedRaw = el.value
-  autoResize(el)
-}
-
-const handleBottomClick = () => {
-  // 在末尾追加新 block
-  blocks.push({ raw: '', inCodeFence: false })
-  buildGroups()
-  syncContent()
-  // 编辑最后一个 group
-  const lastG = groups[groups.length - 1]
-  if (lastG) {
-    lastG.editing = true
-    focusTextarea(groups.length - 1)
-  }
-}
-
-const handleKeydown = (e: KeyboardEvent, gIndex: number) => {
-  const el = e.target as HTMLTextAreaElement
-  const group = groups[gIndex]
-
-  if (e.key === 'Enter' && !e.shiftKey) {
-    // 检查是否在代码块内
-    if (hasUnmatchedFence(group.mergedRaw)) {
-      const pos = el.selectionStart
-      const textBefore = group.mergedRaw.slice(0, pos)
-      const currentLine = textBefore.split('\n').pop() ?? ''
-
-      if (currentLine.trim() === '') {
-        // 空行回车 → 闭合代码块，退出编辑
-        e.preventDefault()
-        group.mergedRaw = group.mergedRaw.replace(/\n$/, '') + '\n```'
-        finishEditGroup(gIndex)
-      }
-      // 非空行：让 textarea 自然换行
-    } else {
-      // 普通段落：回车拆分为新 group
-      e.preventDefault()
-      const pos = el.selectionStart
-      const before = group.mergedRaw.slice(0, pos)
-      const after = group.mergedRaw.slice(pos)
-      group.mergedRaw = before
-
-      // 先保存当前 group
-      finishEditGroup(gIndex)
-
-      // 在后面插入新 block
-      const insertIdx = group.blockStartIndex + group.blockCount
-      blocks.splice(insertIdx, 0, { raw: after, inCodeFence: false })
-      buildGroups()
-      syncContent()
-
-      // 编辑新 group
-      const newGIndex = gIndex + 1
-      if (groups[newGIndex]) {
-        groups[newGIndex].editing = true
-        focusTextarea(newGIndex)
-      }
-    }
-  }
-
-  if (e.key === 'Backspace') {
-    const pos = el.selectionStart
-    if (pos === 0 && group.mergedRaw === '' && groups.length > 1) {
-      e.preventDefault()
-      const removedBlockCount = group.blockCount
-      blocks.splice(group.blockStartIndex, removedBlockCount)
-      buildGroups()
-      syncContent()
-      if (gIndex > 0) {
-        groups[gIndex - 1].editing = true
-        focusTextarea(gIndex - 1)
-      }
-    }
-  }
-}
+  }, 0)
+})
+onBeforeUnmount(() => {
+  scrollContainer?.removeEventListener('scroll', updateActiveHeading, true)
+  editorScrollLayer?.removeEventListener('scroll', updateActiveHeading)
+})
+onBeforeUnmount(() => editor.value?.destroy())
 </script>
 
 <style scoped>
 #fileEditor {
-  width: 100%;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+.workspace {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+.tiptap-content {
+  min-width: 0;
+  flex: 1;
   height: 100%;
   overflow-y: auto;
 }
-
-.editor-content {
-  max-width: 800px;
-  padding: 16px 32px;
-}
-
-/* 渲染态 */
-.block-preview {
-  font-family: var(--font-editor-sans);
-  font-size: 14px;
-  line-height: 1.8;
-  color: var(--color-text);
-  cursor: text;
-  padding: 2px 0;
-  border-radius: 4px;
-  transition: background-color 0.15s;
-}
-
-.block-preview:hover {
-  background-color: var(--color-bg-text-hover);
-}
-
-/* 编辑态 */
-.block-textarea {
+.tiptap-content :deep(.tiptap) {
+  max-width: 920px;
   width: 100%;
-  min-height: 1.8em;
-  padding: 2px 0;
-  border: none;
+  box-sizing: border-box;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 32px 48px 120px;
   outline: none;
-  resize: none;
-  overflow: hidden;
-  font-family: var(--font-editor-mono);
-  font-size: 14px;
-  line-height: 1.8;
-  color: var(--color-text);
-  background-color: transparent;
-  tab-size: 2;
+  text-align: left;
+  font: 15px/1.8 var(--font-editor-sans);
 }
-
-/* 底部点击区 */
-.bottom-area {
-  min-height: 200px;
-  cursor: text;
+.tiptap-content :deep(.tiptap > *) {
+  margin: 0.6em 0;
 }
-
-/* ========== Markdown 渲染样式 ========== */
-
-.editor-content :deep(h1) {
-  font-size: 28px;
-  font-weight: 700;
-  margin: 20px 0 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--color-border);
+.tiptap-content :deep(.tiptap > p:first-child:last-child) {
+  margin: 0;
 }
-
-.editor-content :deep(h2) {
-  font-size: 22px;
-  font-weight: 600;
-  margin: 16px 0 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--color-border);
+.tiptap-content :deep(.tiptap h1),
+.tiptap-content :deep(.tiptap h2),
+.tiptap-content :deep(.tiptap h3) {
+  line-height: 1.35;
+  scroll-margin-top: 20px;
 }
-
-.editor-content :deep(h3) {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 12px 0 4px;
+.tiptap-content :deep(.tiptap h1) {
+  font-size: 30px;
 }
-
-.editor-content :deep(h4),
-.editor-content :deep(h5),
-.editor-content :deep(h6) {
-  font-size: 14px;
-  font-weight: 600;
-  margin: 10px 0 4px;
+.tiptap-content :deep(.tiptap h2) {
+  font-size: 23px;
 }
-
-.editor-content :deep(p) {
-  margin: 4px 0;
+.tiptap-content :deep(.tiptap h3) {
+  font-size: 19px;
 }
-
-.editor-content :deep(code) {
-  font-family: var(--font-editor-mono);
-  background-color: var(--color-bg-text-hover);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-.editor-content :deep(pre) {
-  background-color: var(--color-bg-text-hover);
-  padding: 14px 18px;
-  border-radius: 8px;
-  overflow-x: auto;
-  margin: 8px 0;
-}
-
-.editor-content :deep(pre code) {
-  background: none;
-  padding: 0;
-}
-
-.editor-content :deep(blockquote) {
-  border-left: 4px solid var(--color-primary);
-  padding-left: 14px;
-  margin: 8px 0;
+.tiptap-content :deep(.tiptap blockquote) {
+  border-left: 3px solid var(--color-primary);
+  padding-left: 16px;
   color: var(--color-text-secondary);
 }
-
-.editor-content :deep(ul),
-.editor-content :deep(ol) {
-  padding-left: 24px;
-  margin: 4px 0;
+.tiptap-content :deep(.tiptap pre) {
+  padding: 16px;
+  border-radius: 8px;
+  background: #f6f8fa;
+  overflow-x: auto;
 }
-
-.editor-content :deep(li) {
-  margin: 2px 0;
+.tiptap-content :deep(.tiptap code) {
+  border-radius: 4px;
+  background: var(--color-bg-text-hover);
+  padding: 2px 5px;
 }
-
-.editor-content :deep(a) {
+.tiptap-content :deep(.tiptap pre code) {
+  padding: 0;
+  background: transparent;
+}
+.tiptap-content :deep(.tiptap a) {
   color: var(--color-primary);
-  text-decoration: none;
 }
-
-.editor-content :deep(a:hover) {
-  text-decoration: underline;
-}
-
-.editor-content :deep(hr) {
-  border: none;
-  border-top: 1px solid var(--color-border);
-  margin: 12px 0;
-}
-
-.editor-content :deep(table) {
+.tiptap-content :deep(.tiptap table) {
   border-collapse: collapse;
   width: 100%;
-  margin: 8px 0;
 }
-
-.editor-content :deep(th),
-.editor-content :deep(td) {
+.tiptap-content :deep(.tiptap th),
+.tiptap-content :deep(.tiptap td) {
   border: 1px solid var(--color-border);
-  padding: 6px 10px;
-  text-align: left;
+  padding: 7px 10px;
 }
-
-.editor-content :deep(th) {
-  background-color: var(--color-bg-text-hover);
+.outline-pane {
+  width: 190px;
+  flex: 0 0 190px;
+  padding: 28px 14px;
+  overflow-y: auto;
+  border-left: 1px solid var(--color-border);
+}
+.outline-item {
+  display: block;
+  width: 100%;
+  margin: 2px 0;
+  padding: 6px 10px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0 5px 5px 0;
+  color: var(--color-text-secondary);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.outline-item:hover {
+  color: var(--color-primary);
+  background: var(--color-bg-text-hover);
+  border-left-color: var(--color-primary);
+}
+.outline-item.level-2 {
+  padding-left: 20px;
+}
+.outline-item.level-3,
+.outline-item.level-4,
+.outline-item.level-5,
+.outline-item.level-6 {
+  padding-left: 30px;
+}
+.tiptap-content :deep(.tiptap a:hover) {
+  color: var(--color-primary-hover, #1677ff);
+  text-decoration: underline;
+}
+.tiptap-content :deep(.tiptap pre) {
+  position: relative;
+}
+.tiptap-content :deep(.code-copy-button) {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  cursor: pointer;
+  font-size: 12px;
+}
+.tiptap-content :deep(.code-copy-button:hover) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.tiptap-content :deep(.hljs-keyword),
+.tiptap-content :deep(.hljs-selector-tag),
+.tiptap-content :deep(.hljs-built_in) {
+  color: #8b5cf6;
+}
+.tiptap-content :deep(.hljs-string),
+.tiptap-content :deep(.hljs-attr) {
+  color: #0f766e;
+}
+.tiptap-content :deep(.hljs-comment) {
+  color: #8c959f;
+}
+.tiptap-content :deep(.hljs-number),
+.tiptap-content :deep(.hljs-literal) {
+  color: #c2410c;
+}
+.outline-item.active {
+  color: var(--color-primary);
+  background: var(--color-bg-text-hover);
+  border-left-color: var(--color-primary);
   font-weight: 600;
 }
-
-.editor-content :deep(img) {
-  max-width: 100%;
-  border-radius: 4px;
+@media (max-width: 900px) {
+  .outline-pane {
+    display: none;
+  }
 }
 </style>
