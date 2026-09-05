@@ -270,6 +270,7 @@ const startAddFileItem = (type: 'file' | 'folder') => {
     name: '',
     type: type,
     isEditing: true,
+    editMode: 'add',
     ...(type === 'folder' ? { isOpen: false, children: [] } : {})
   }
   
@@ -386,6 +387,84 @@ const finishAddFileItem = (tempId: number, fileName: string): { success: boolean
 
   processTempItem(floderList.value)
   return result
+}
+
+/** 开始重命名已有文件/文件夹。 */
+const startRenameFileItem = (id: number): boolean => {
+  const item = findItemById(id)
+  if (!item) return false
+  item.isEditing = true
+  item.editMode = 'rename'
+  return true
+}
+
+/** 完成新增或重命名编辑。 */
+const finishEditFileItem = (id: number, fileName: string): { success: boolean; message?: string } => {
+  const findAndEdit = (items: FileItem[]): { success: boolean; message?: string } | null => {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (!item) continue
+      if (item.id === id) {
+        // Enter 确认后输入框可能随后触发 blur，避免重复提交破坏已完成的编辑。
+        if (!item.isEditing) return { success: true }
+        const name = fileName.trim()
+        if (item.editMode === 'rename') {
+          if (!name) return { success: false, message: '名称不能为空' }
+          if (isDuplicateName(items, name, item.type, id)) {
+            return { success: false, message: `已存在同名${item.type === 'folder' ? '文件夹' : '文件'}: ${name}` }
+          }
+          items.splice(i, 1, { ...item, name, isEditing: false, editMode: undefined })
+          sortTree(items)
+          return { success: true }
+        }
+        return finishAddFileItem(id, name)
+      }
+      if (item.children) {
+        const result = findAndEdit(item.children)
+        if (result) return result
+      }
+    }
+    return null
+  }
+  return findAndEdit(floderList.value) ?? { success: false, message: '找不到要编辑的项' }
+}
+
+/** 取消编辑：新增的临时项移除，重命名恢复原状。 */
+const cancelEditFileItem = (id: number) => {
+  const cancel = (items: FileItem[]): boolean => {
+    const index = items.findIndex(item => item.id === id)
+    if (index !== -1) {
+      const item = items[index]
+      if (!item) return false
+      if (item.editMode === 'add') items.splice(index, 1)
+      else items.splice(index, 1, { ...item, isEditing: false, editMode: undefined })
+      return true
+    }
+    return items.some(item => item.children ? cancel(item.children) : false)
+  }
+  cancel(floderList.value)
+}
+
+/** 删除文件或文件夹（文件夹会递归删除其子项）。 */
+const deleteFileItem = (id: number): { success: boolean; message?: string } => {
+  const removedIds: number[] = []
+  const collectIds = (item: FileItem) => {
+    removedIds.push(item.id as number)
+    item.children?.forEach(collectIds)
+  }
+  const remove = (items: FileItem[]): boolean => {
+    const index = items.findIndex(item => item.id === id)
+    if (index !== -1) {
+      const [removed] = items.splice(index, 1)
+      if (removed) collectIds(removed)
+      return true
+    }
+    return items.some(item => item.children ? remove(item.children) : false)
+  }
+  if (!remove(floderList.value)) return { success: false, message: '找不到要删除的项' }
+  removedIds.forEach(removedId => { delete fileContents.value[removedId] })
+  if (removedIds.includes(activeFloderId.value as number)) activeFloderId.value = null
+  return { success: true }
 }
 
 /**
@@ -605,6 +684,10 @@ const moveItem = (sourceId: number, targetFolderId: number): { success: boolean;
     setAllFoldersOpen,
     startAddFileItem,
     finishAddFileItem,
+    startRenameFileItem,
+    finishEditFileItem,
+    cancelEditFileItem,
+    deleteFileItem,
     moveItem,
     toggleIsCollspe,
     getActiveItemPath,

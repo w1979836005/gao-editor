@@ -5,6 +5,7 @@
       :class="[
         'folderNode',
         { active: activeFolderId === item.id },
+        { editing: item.isEditing },
         { 'drag-over': isDragOver },
         { dragging: isDragging },
       ]"
@@ -50,7 +51,7 @@
         <span class="floderName" v-else>{{ item.name }}.md</span>
       </template>
 
-      <a-dropdown trigger="click">
+      <a-dropdown trigger="click" @click.stop>
         <MoreOutlined class="icon more-icon" />
         <template #overlay>
           <a-menu @click="onClick">
@@ -94,6 +95,7 @@
           ) => emit('finish-edit', id, name, callback)
         "
         @move-item="(sourceId: number, targetId: number) => emit('move-item', sourceId, targetId)"
+        @cancel-edit="(id: number) => emit('cancel-edit', id)"
       />
     </div>
   </div>
@@ -103,7 +105,7 @@
 import { ref, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { RightOutlined, FolderOutlined, FileOutlined, MoreOutlined } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import type { FileItem } from './LeftFolders.vue'
 import type { MenuProps } from 'ant-design-vue'
 import { useLeftFoldersStore } from '@/stores/leftFoldersStore.ts'
@@ -125,6 +127,7 @@ const emit = defineEmits<{
     callback: (result: { success: boolean; message?: string }) => void,
   ]
   'move-item': [sourceId: number, targetId: number]
+  'cancel-edit': [id: number]
 }>()
 
 const editName = ref('')
@@ -140,6 +143,7 @@ watch(
   (newVal) => {
     if (newVal) {
       editName.value = ''
+      if (props.item.editMode === 'rename') editName.value = props.item.name
       hasError.value = false
       nextTick(() => {
         editInputRef.value?.focus()
@@ -187,8 +191,7 @@ const handleBlur = () => {
 }
 
 const handleCancel = () => {
-  // 取消编辑，移除临时项
-  emit('finish-edit', props.item.id as number, '', () => {})
+  emit('cancel-edit', props.item.id as number)
 }
 
 // ============ 拖拽处理 ============
@@ -329,14 +332,26 @@ const copyLInk = async () => {
  * 重命名文件夹
  */
 const renameFile = () => {
-  console.log('重命名文件夹')
+  leftFoldersStore.startRenameFileItem(props.item.id as number)
 }
 
 /**
  * 删除文件/文件夹
  */
 const deleteFile = () => {
-  console.log('删除文件/文件夹')
+  const itemName = props.item.type === 'file' ? `${props.item.name}.md` : props.item.name
+  Modal.confirm({
+    title: `确认删除“${itemName}”吗？`,
+    content: props.item.type === 'folder' ? '文件夹内的所有内容也会被删除。' : undefined,
+    okText: '删除',
+    cancelText: '取消',
+    okButtonProps: { danger: true },
+    onOk: () => {
+      const result = leftFoldersStore.deleteFileItem(props.item.id as number)
+      if (result.success) message.success('删除成功')
+      else if (result.message) message.error(result.message)
+    },
+  })
 }
 </script>
 
@@ -400,7 +415,9 @@ const deleteFile = () => {
   height: 20px;
   font-size: 12px;
   line-height: 1.2;
-  transform: translateY(-1px);
+  transform: none;
+  box-sizing: border-box;
+  align-self: center;
   padding: 0 4px;
   border: 1px solid var(--color-primary);
   border-radius: 4px;
@@ -435,6 +452,11 @@ const deleteFile = () => {
   position: absolute;
   right: 4px;
   opacity: 0;
+}
+
+/* 编辑时隐藏操作按钮，避免遮挡输入框并防止 hover 状态抢占空间。 */
+.folderNode.editing .more-icon {
+  display: none;
 }
 
 /* 当父元素处于 hover 状态，或者处于 active 状态时显示 */

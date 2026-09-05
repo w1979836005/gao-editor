@@ -8,6 +8,7 @@
     @toggle="folderListStroe.handleToggle"
     :active-folder-id="folderListStroe.activeFloderId"
     @finish-edit="handleFinishEdit"
+    @cancel-edit="folderListStroe.cancelEditFileItem"
     @move-item="handleMoveItem"/>
    </template>
 
@@ -35,13 +36,14 @@ export interface FileItem {
   children?: FileItem[]
   isOpen?: boolean
   isEditing?: boolean
+  editMode?: 'add' | 'rename'
 }
 
 
 const folderListStroe = useLeftFoldersStore()
 
 const handleFinishEdit = (id: number, name: string, callback: (result: { success: boolean; message?: string }) => void) => {
-  const result = folderListStroe.finishAddFileItem(id, name)
+  const result = folderListStroe.finishEditFileItem(id, name)
   callback(result)
 }
 
