@@ -2,7 +2,7 @@
   <div id="fileEditor">
     <div class="workspace">
       <EditorContent v-if="editor" :editor="editor" class="tiptap-content" />
-      <aside v-if="headings.length" class="outline-pane">
+      <aside class="outline-pane" :class="{ 'outline-empty': !headings.length }">
         <button
           v-for="heading in headings"
           :key="heading.id"
@@ -172,11 +172,11 @@ onBeforeUnmount(() => editor.value?.destroy())
   overflow-y: auto;
 }
 .tiptap-content :deep(.tiptap) {
-  max-width: 920px;
+  max-width: none;
   width: 100%;
   box-sizing: border-box;
   min-height: 100%;
-  margin: 0 auto;
+  margin: 0;
   padding: 32px 48px 120px;
   outline: none;
   text-align: left;
@@ -241,6 +241,9 @@ onBeforeUnmount(() => editor.value?.destroy())
   padding: 28px 14px;
   overflow-y: auto;
   border-left: 1px solid var(--color-border);
+}
+.outline-pane.outline-empty {
+  visibility: hidden;
 }
 .outline-item {
   display: block;
